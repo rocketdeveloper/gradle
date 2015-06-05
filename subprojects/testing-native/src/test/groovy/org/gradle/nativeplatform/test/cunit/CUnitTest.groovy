@@ -15,9 +15,9 @@
  */
 package org.gradle.nativeplatform.test.cunit
 
-import org.gradle.language.c.plugins.CPlugin
-import org.gradle.model.internal.core.DefaultModelMap
+import org.gradle.language.c.CSourceSet
 import org.gradle.model.internal.core.ModelPath
+import org.gradle.model.internal.type.ModelTypes
 import org.gradle.nativeplatform.NativeLibrarySpec
 import org.gradle.nativeplatform.test.cunit.plugins.CUnitPlugin
 import org.gradle.platform.base.test.TestSuiteSpec
@@ -27,9 +27,8 @@ import spock.lang.Specification
 class CUnitTest extends Specification {
     final def project = TestUtil.createRootProject();
 
-    def "check the correct binary type are created for the test suite"() {
-        when:
-        project.pluginManager.apply(CPlugin)
+    def "creates a test suite for each library under test"() {
+        given:
         project.pluginManager.apply(CUnitPlugin)
         project.model {
             components {
@@ -38,9 +37,17 @@ class CUnitTest extends Specification {
         }
         project.evaluate()
 
+        when:
+        CUnitTestSuiteSpec testSuite = project.modelRegistry.realize(ModelPath.path("testSuites"), ModelTypes.modelMap(TestSuiteSpec)).mainTest
+        def sources = testSuite.source.values()
+        def binaries = testSuite.binaries.values()
+
         then:
-        def binaries = project.modelRegistry.realize(ModelPath.path("testSuites"), DefaultModelMap.modelMapTypeOf(TestSuiteSpec)).get("mainTest").binaries
-        then:
-        binaries.collect({ it instanceof CUnitTestSuiteBinarySpec }) == [true] * binaries.size()
+        sources.size() == 2
+        sources.every { it instanceof CSourceSet }
+
+        and:
+        binaries.size() == 1
+        binaries.every { it instanceof CUnitTestSuiteBinarySpec }
     }
 }

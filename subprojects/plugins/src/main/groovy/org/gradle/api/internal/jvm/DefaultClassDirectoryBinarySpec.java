@@ -17,7 +17,6 @@ package org.gradle.api.internal.jvm;
 
 import org.gradle.api.Action;
 import org.gradle.api.DomainObjectSet;
-import org.gradle.api.PolymorphicDomainObjectContainer;
 import org.gradle.api.internal.AbstractBuildableModelElement;
 import org.gradle.api.internal.DefaultDomainObjectSet;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
@@ -28,11 +27,13 @@ import org.gradle.jvm.platform.JavaPlatform;
 import org.gradle.jvm.toolchain.JavaToolChain;
 import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.LanguageSourceSet;
+import org.gradle.model.ModelMap;
 import org.gradle.platform.base.BinaryTasksCollection;
 import org.gradle.platform.base.internal.*;
 import org.gradle.platform.base.internal.toolchain.ToolResolver;
 
 import java.io.File;
+import java.util.Set;
 
 public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelElement implements ClassDirectoryBinarySpecInternal {
     private final DefaultDomainObjectSet<LanguageSourceSet> sourceSets = new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet.class);
@@ -133,24 +134,31 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
         this.resourcesDir = resourcesDir;
     }
 
-    public FunctionalSourceSet getBinarySources() {
-        throw new UnsupportedOperationException();
-    }
-
     public void setBinarySources(FunctionalSourceSet sources) {
         throw new UnsupportedOperationException();
     }
 
-    public void sources(Action<? super PolymorphicDomainObjectContainer<LanguageSourceSet>> action) {
+    public void sources(Action<? super ModelMap<LanguageSourceSet>> action) {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public DomainObjectSet<LanguageSourceSet> getSource() {
         return sourceSets;
     }
 
-    public void source(Object source) {
+    public void source(LanguageSourceSet source) {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<LanguageSourceSet> getAllSources() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addSourceSet(LanguageSourceSet sourceSet) {
+        sourceSets.add(sourceSet);
     }
 
     public String getDisplayName() {

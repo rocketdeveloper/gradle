@@ -16,12 +16,13 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter;
 
-import org.apache.ivy.core.module.descriptor.DefaultModuleDescriptor;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
 import org.gradle.api.internal.artifacts.ModuleInternal;
 import org.gradle.api.internal.artifacts.component.ComponentIdentifierFactory;
-import org.gradle.api.internal.artifacts.ivyservice.IvyUtil;
+import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
 import org.gradle.api.internal.artifacts.ivyservice.LocalComponentFactory;
 import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies.DependenciesToModuleDescriptorConverter;
 import org.gradle.internal.component.local.model.DefaultLocalComponentMetaData;
@@ -30,9 +31,6 @@ import org.gradle.internal.component.local.model.MutableLocalComponentMetaData;
 import java.util.Set;
 
 public class ResolveLocalComponentFactory implements LocalComponentFactory {
-    static final String IVY_MAVEN_NAMESPACE = "http://ant.apache.org/ivy/maven";
-    static final String IVY_MAVEN_NAMESPACE_PREFIX = "m";
-
     private final ConfigurationsToModuleDescriptorConverter configurationsToModuleDescriptorConverter;
     private final DependenciesToModuleDescriptorConverter dependenciesToModuleDescriptorConverter;
     private final ComponentIdentifierFactory componentIdentifierFactory;
@@ -48,15 +46,30 @@ public class ResolveLocalComponentFactory implements LocalComponentFactory {
         this.configurationsToArtifactsConverter = configurationsToArtifactsConverter;
     }
 
-    public MutableLocalComponentMetaData convert(Set<? extends Configuration> configurations, ModuleInternal module) {
-        assert configurations.size() > 0 : "No configurations found for module: " + module.getName() + ". Configure them or apply a plugin that does it.";
-        DefaultModuleDescriptor moduleDescriptor = new DefaultModuleDescriptor(IvyUtil.createModuleRevisionId(module), module.getStatus(), null);
-        moduleDescriptor.addExtraAttributeNamespace(IVY_MAVEN_NAMESPACE_PREFIX, IVY_MAVEN_NAMESPACE);
+    @Override
+    public boolean canConvert(Object source) {
+        return source instanceof ComponentConverterSource || source instanceof Configuration;
+    }
+
+    @Override
+    public MutableLocalComponentMetaData convert(Object source) {
+        Set<? extends Configuration> contexts;
+        ModuleInternal module;
+        if (source instanceof Configuration) {
+            contexts = ((Configuration) source).getAll();
+            module = ((ConfigurationInternal)source).getModule();
+        } else {
+            contexts = ((ComponentConverterSource)source).getConfigurations();
+            module = ((ComponentConverterSource)source).getModule();
+        }
+        assert contexts.size() > 0 : "No configurations found for module: " + module.getName() + ". Configure them or apply a plugin that does it.";
         ComponentIdentifier componentIdentifier = componentIdentifierFactory.createComponentIdentifier(module);
-        DefaultLocalComponentMetaData metaData = new DefaultLocalComponentMetaData(moduleDescriptor, componentIdentifier);
-        configurationsToModuleDescriptorConverter.addConfigurations(metaData, configurations);
-        dependenciesToModuleDescriptorConverter.addDependencyDescriptors(metaData, configurations);
-        configurationsToArtifactsConverter.addArtifacts(metaData, configurations);
+        ModuleVersionIdentifier moduleVersionIdentifier = DefaultModuleVersionIdentifier.newId(module);
+        DefaultLocalComponentMetaData metaData = new DefaultLocalComponentMetaData(moduleVersionIdentifier, componentIdentifier, module.getStatus());
+        configurationsToModuleDescriptorConverter.addConfigurations(metaData, contexts);
+        dependenciesToModuleDescriptorConverter.addDependencyDescriptors(metaData, contexts);
+        configurationsToArtifactsConverter.addArtifacts(metaData, contexts);
         return metaData;
     }
+
 }

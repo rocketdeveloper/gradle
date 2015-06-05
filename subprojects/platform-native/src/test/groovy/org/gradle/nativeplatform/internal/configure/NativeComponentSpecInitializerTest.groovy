@@ -15,20 +15,22 @@
  */
 
 package org.gradle.nativeplatform.internal.configure
+
 import org.gradle.api.Named
 import org.gradle.internal.reflect.DirectInstantiator
 import org.gradle.language.base.ProjectSourceSet
 import org.gradle.language.base.internal.DefaultFunctionalSourceSet
+import org.gradle.model.internal.fixture.ModelRegistryHelper
 import org.gradle.nativeplatform.BuildType
 import org.gradle.nativeplatform.Flavor
-import org.gradle.nativeplatform.internal.DefaultNativeExecutableSpec
+import org.gradle.nativeplatform.internal.DefaultNativeLibrarySpec
 import org.gradle.nativeplatform.platform.NativePlatform
 import org.gradle.nativeplatform.platform.internal.NativePlatformInternal
 import org.gradle.nativeplatform.platform.internal.NativePlatforms
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainRegistryInternal
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider
-import org.gradle.platform.base.component.BaseComponentSpec
+import org.gradle.platform.base.component.BaseComponentFixtures
 import org.gradle.platform.base.internal.BinaryNamingSchemeBuilder
 import org.gradle.platform.base.internal.DefaultComponentSpecIdentifier
 import org.gradle.platform.base.internal.DefaultPlatformRequirement
@@ -51,7 +53,7 @@ class NativeComponentSpecInitializerTest extends Specification {
 
     def id = new DefaultComponentSpecIdentifier("project", "name")
     def mainSourceSet = new DefaultFunctionalSourceSet("testFSS", DirectInstantiator.INSTANCE, Stub(ProjectSourceSet));
-    def component = BaseComponentSpec.create(DefaultNativeExecutableSpec, id, mainSourceSet, instantiator)
+    def component = BaseComponentFixtures.create(DefaultNativeLibrarySpec.class, new ModelRegistryHelper(), id, mainSourceSet, instantiator)
 
     def "does not use variant dimension names for single valued dimensions"() {
         component.targetPlatform("platform1")
@@ -72,7 +74,7 @@ class NativeComponentSpecInitializerTest extends Specification {
     def "does not use variant dimension names when component targets a single point on dimension"() {
         when:
         def factory = new NativeComponentSpecInitializer(nativeBinariesFactory, namingSchemeBuilder, toolChains,
-                platforms, nativePlatforms, [buildType, Mock(BuildType)], [flavor, Mock(Flavor)])
+            platforms, nativePlatforms, [buildType, Mock(BuildType)], [flavor, Mock(Flavor)])
         component.targetPlatform("platform1")
         component.targetBuildTypes("buildType1")
         component.targetFlavors("flavor1")
@@ -94,7 +96,7 @@ class NativeComponentSpecInitializerTest extends Specification {
 
         when:
         def factory = new NativeComponentSpecInitializer(nativeBinariesFactory, namingSchemeBuilder, toolChains,
-                platforms, nativePlatforms, [buildType], [flavor])
+            platforms, nativePlatforms, [buildType], [flavor])
         factory.execute(component)
 
 
@@ -124,7 +126,7 @@ class NativeComponentSpecInitializerTest extends Specification {
 
         when:
         def factory = new NativeComponentSpecInitializer(nativeBinariesFactory, namingSchemeBuilder, toolChains,
-                platforms, nativePlatforms, [buildType, buildType2], [flavor])
+            platforms, nativePlatforms, [buildType, buildType2], [flavor])
         factory.execute(component)
 
         then:
@@ -149,7 +151,7 @@ class NativeComponentSpecInitializerTest extends Specification {
         final Flavor flavor2 = createStub(Flavor, "flavor2")
         when:
         def factory = new NativeComponentSpecInitializer(nativeBinariesFactory, namingSchemeBuilder, toolChains,
-                platforms, nativePlatforms, [buildType], [flavor, flavor2])
+            platforms, nativePlatforms, [buildType], [flavor, flavor2])
         factory.execute(component)
 
         then:

@@ -16,15 +16,12 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
-import org.gradle.tooling.events.ProgressEventType;
-import org.gradle.tooling.events.build.BuildProgressListener;
-import org.gradle.tooling.events.task.TaskProgressListener;
-import org.gradle.tooling.events.test.TestProgressListener;
+import org.gradle.tooling.events.OperationType;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * Offers ways to communicate both ways with a Gradle operation, be it building a model or running tasks.
@@ -164,45 +161,25 @@ public interface LongRunningOperation {
     LongRunningOperation addProgressListener(ProgressListener listener);
 
     /**
-     * Adds a progress listener which will receive progress events of the requested types as the operation runs.
-     *
-     * @param listener The listener
-     * @param eventTypes The types of progress events to receive
-     * @return this
-     * @since 2.5
-     */
-    @Incubating
-    LongRunningOperation addProgressListener(org.gradle.tooling.events.ProgressListener listener, EnumSet<ProgressEventType> eventTypes);
-
-    /**
-     * Adds a test progress listener which will receive test progress events as the operation runs.
-     *
-     * @param listener The listener
-     * @return this
-     * @since 2.4
-     */
-    @Incubating
-    LongRunningOperation addTestProgressListener(TestProgressListener listener);
-
-    /**
-     * Adds a task progress listener which will receive task progress events as the operation runs.
+     * Adds a progress listener which will receive progress events of all types as the operation runs.
      *
      * @param listener The listener
      * @return this
      * @since 2.5
      */
     @Incubating
-    LongRunningOperation addTaskProgressListener(TaskProgressListener listener);
+    LongRunningOperation addProgressListener(org.gradle.tooling.events.ProgressListener listener);
 
     /**
-     * Adds a build progress listener which will receive build progress events as the operation runs.
+     * Adds a progress listener which will receive progress events as the operations of the requested type run.
      *
      * @param listener The listener
+     * @param operationTypes The types of operations to receive progress events for.
      * @return this
      * @since 2.5
      */
     @Incubating
-    LongRunningOperation addBuildProgressListener(BuildProgressListener listener);
+    LongRunningOperation addProgressListener(org.gradle.tooling.events.ProgressListener listener, Set<OperationType> operationTypes);
 
     /**
      * Sets the cancellation token to use to cancel the operation if required.

@@ -25,8 +25,10 @@ import org.gradle.model.ModelRuleBindingException
 import org.gradle.model.internal.core.*
 import org.gradle.model.internal.fixture.ModelRegistryHelper
 import org.gradle.model.internal.type.ModelType
+import org.gradle.model.internal.type.ModelTypes
 import org.gradle.util.TextUtil
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import static org.gradle.util.TextUtil.normaliseLineSeparators
 
@@ -94,14 +96,13 @@ class DefaultModelRegistryTest extends Specification {
       - <unspecified> (java.lang.Long)"""
     }
 
-    def "cannot get element for which creator by-type input is ambiguous"() {
+    def "cannot register creator when by-type input is ambiguous"() {
         given:
         registry.createInstance("other-1", 11)
         registry.createInstance("other-2", 12)
-        registry.create("foo") { it.descriptor("foo creator").unmanaged(String, Number, Stub(Transformer)) }
 
         when:
-        registry.realize(ModelPath.path("foo"), ModelType.untyped())
+        registry.create("foo") { it.descriptor("foo creator").unmanaged(String, Number, Stub(Transformer)) }
 
         then:
         InvalidModelRuleException e = thrown()
@@ -331,6 +332,50 @@ class DefaultModelRegistryTest extends Specification {
         registry.realize(ModelPath.path("bar"), ModelType.of(Bean)).value == "[12]"
     }
 
+    def "transitions elements that depend on a particular state of an element when the target element leaves target state"() {
+        given:
+        registry.createInstance("a", new Bean())
+        registry.createInstance("b", new Bean())
+        registry.configure(ModelActionRole.Finalize) { it.path("b").action(ModelReference.of(ModelPath.path("a"), ModelType.of(Bean), ModelNode.State.DefaultsApplied)) { Bean b, Bean a ->
+            b.value = "$b.value $a.value"
+        }}
+        registry.configure(ModelActionRole.Mutate) { it.path("b").action { Bean b ->
+            b.value = "b-mutate"
+        }}
+        registry.configure(ModelActionRole.Mutate) { it.path("a").action { Bean a ->
+            a.value = "a-mutate"
+        }}
+        registry.configure(ModelActionRole.Defaults) { it.path("a").action { Bean a ->
+            a.value = "a-defaults"
+        }}
+
+        expect:
+        registry.realize(ModelPath.path("a"), ModelType.of(Bean)).value == "a-mutate"
+        registry.realize(ModelPath.path("b"), ModelType.of(Bean)).value == "b-mutate a-defaults"
+    }
+
+    def "transitions input elements to target state"() {
+        given:
+        registry.createInstance("a", new Bean())
+        registry.createInstance("b", new Bean())
+        registry.configure(ModelActionRole.Finalize) { it.path("b").action(ModelReference.of(ModelPath.path("a"), ModelType.of(Bean), ModelNode.State.DefaultsApplied)) { Bean b, Bean a ->
+            b.value = "$b.value $a.value"
+        }}
+        registry.configure(ModelActionRole.Mutate) { it.path("b").action { Bean b ->
+            b.value = "b-mutate"
+        }}
+        registry.configure(ModelActionRole.Mutate) { it.path("a").action { Bean a ->
+            a.value = "a-mutate"
+        }}
+        registry.configure(ModelActionRole.Defaults) { it.path("a").action { Bean a ->
+            a.value = "a-defaults"
+        }}
+
+        expect:
+        registry.realize(ModelPath.path("b"), ModelType.of(Bean)).value == "b-mutate a-defaults"
+        registry.realize(ModelPath.path("a"), ModelType.of(Bean)).value == "a-mutate"
+    }
+
     def "can attach a mutator with inputs to all elements linked from an element"() {
         def creatorAction = Mock(Action)
         def mutatorAction = Mock(BiAction)
@@ -461,6 +506,19 @@ class DefaultModelRegistryTest extends Specification {
         e.cause.message == "Cannot set value for model element 'thing' as this element is not mutable."
     }
 
+    def "can replace an element that has not been used as input by a rule"() {
+        given:
+        registry.createInstance("thing", new Bean(value: "old"))
+        registry.configure(ModelActionRole.Mutate) { it.path("thing").action { it.value = "${it.value} path" } }
+        registry.configure(ModelActionRole.Mutate) { it.type(Bean).action { it.value = "${it.value} type" } }
+        registry.remove(ModelPath.path("thing"))
+        registry.createInstance("thing", new Bean(value: "new"))
+
+        expect:
+        registry.realize(ModelPath.path("thing"), ModelType.of(Bean)).value == "new path type"
+    }
+
+    @Unroll
     def "cannot add action for #targetRole mutation when in #fromRole mutation"() {
         def action = Stub(Action)
 
@@ -473,8 +531,9 @@ class DefaultModelRegistryTest extends Specification {
         registry.realize(ModelPath.path("thing"), ModelType.untyped())
 
         then:
-        IllegalStateException e = thrown()
-        e.message.startsWith "Cannot add $targetRole rule 'X' for model element 'thing'"
+        ModelRuleExecutionException e = thrown()
+        e.cause instanceof IllegalStateException
+        e.cause.message == "Cannot add rule X for model element 'thing' at state ${targetRole.targetState.previous()} as this element is already at state ${fromRole.targetState.previous()}."
 
         where:
         fromRole                   | targetRole
@@ -490,6 +549,7 @@ class DefaultModelRegistryTest extends Specification {
         ModelActionRole.Validate   | ModelActionRole.Finalize
     }
 
+    @Unroll
     def "cannot add action for #targetRole mutation when in #fromState state"() {
         def action = Stub(Action)
 
@@ -508,8 +568,9 @@ class DefaultModelRegistryTest extends Specification {
         registry.realize(ModelPath.path("another"), ModelType.untyped())
 
         then:
-        IllegalStateException e = thrown()
-        e.message.startsWith "Cannot add $targetRole rule 'X' for model element 'thing'"
+        ModelRuleExecutionException e = thrown()
+        e.cause instanceof IllegalStateException
+        e.cause.message == "Cannot add rule X for model element 'thing' at state ${targetRole.targetState.previous()} as this element is already at state ${fromState}."
 
         where:
         fromState                       | targetRole
@@ -590,7 +651,7 @@ class DefaultModelRegistryTest extends Specification {
         thing.value == "input value"
 
         where:
-        targetRole << ModelActionRole.values()
+        targetRole << ModelActionRole.values().find { it.targetState != null }
     }
 
     def "can add action for #targetRole mutation when in #fromState state"() {
@@ -684,7 +745,7 @@ class DefaultModelRegistryTest extends Specification {
     def "getting self closed collection defines all links but does not realise them until graph closed"() {
         given:
         def events = []
-        def mmType = DefaultModelMap.modelMapTypeOf(Bean)
+        def mmType = ModelTypes.modelMap(Bean)
 
         registry
                 .modelMap("things", Bean) { it.registerFactory(Bean) { new Bean(name: it) } }
@@ -876,7 +937,7 @@ class DefaultModelRegistryTest extends Specification {
 
     def "only rules that actually have unbound inputs are reported as unbound"() {
         given:
-        def mmType = DefaultModelMap.modelMapTypeOf(Bean)
+        def mmType = ModelTypes.modelMap(Bean)
 
         registry
                 .createInstance("foo", new Bean())
@@ -906,6 +967,18 @@ class DefaultModelRegistryTest extends Specification {
       + foo (org.gradle.model.internal.registry.DefaultModelRegistryTest$Bean)
     Immutable:
       - emptyBeans.element (org.gradle.model.internal.registry.DefaultModelRegistryTest$Bean)'''
+    }
+
+    def "does not report unbound creators of removed nodes"() {
+        given:
+        registry.create(ModelPath.path("unused")) { it.unmanaged(String, "unknown") { }}
+        registry.remove(ModelPath.path("unused"))
+
+        when:
+        registry.bindAllReferences()
+
+        then:
+        noExceptionThrown()
     }
 
     def "two element mutation rule based configuration cycles are detected"() {
@@ -971,12 +1044,12 @@ foo
 
     def "only the elements actually forming the cycle are reported when configuration cycles are detected"() {
         given:
-        registry.create("foo") { it.unmanaged(String, "bar") { "foo" } }
+        registry.create("foo") { it.unmanaged(Long, "bar") { 12 } }
                 .create("bar") { it.unmanaged(String, "fizz") { "bar" } }
-                .mutate { it.path("foo").type(String).action(String) {} }
-                .create("fizz") { it.unmanaged(String, "buzz") { "buzz" } }
-                .mutate { it.path("fizz").descriptor("fizz mutator").type(String).action("bar", ModelType.of(String), {}) }
-                .createInstance("buzz", "buzz")
+                .mutate { it.path("foo").action(String) {} }
+                .create("fizz") { it.unmanaged(Boolean, "buzz") { "buzz" } }
+                .mutate { it.path("fizz").descriptor("fizz mutator").action("bar", ModelType.of(String), {}) }
+                .createInstance("buzz", Long)
 
         when:
         registry.get("foo")

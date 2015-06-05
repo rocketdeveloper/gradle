@@ -19,39 +19,268 @@ package org.gradle.api.reporting.model
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
 class ModelReportIntegrationTest extends AbstractIntegrationSpec {
+
     def "displays basic structure of an empty project"() {
+        given:
+        buildFile
+
         when:
         run "model"
 
         then:
-        // just check that it doesn't blow up for now
-        output.contains("tasks")
+        def modelReportOutput = ModelReportOutput.from(output)
+        modelReportOutput.hasNodeStructure({
+            model() {
+                tasks {
+                    components(nodeValue: "task ':components'", type: 'org.gradle.api.reporting.components.ComponentReport')
+                    dependencies()
+                    dependencyInsight()
+                    help()
+                    init()
+                    model()
+                    projects()
+                    properties()
+                    tasks()
+                    wrapper()
+                }
+            }
+        })
     }
 
-    def "displays basic structure of a polyglot project"() {
+    def "displays basic values of a simple model graph with values"() {
         given:
         buildFile << """
-plugins {
-    id 'jvm-component'
-    id 'java-lang'
-    id 'cpp'
-    id 'c'
+
+@Managed
+public interface PasswordCredentials {
+    String getUsername()
+    String getPassword()
+    void setUsername(String s)
+    void setPassword(String s)
+}
+
+
+@Managed
+public interface Numbers {
+    Integer getValue()
+    void setValue(Integer i)
 }
 
 model {
-    components {
-        jvmLib(JvmLibrarySpec)
-        nativeLib(NativeLibrarySpec)
+    primaryCredentials(PasswordCredentials){
+        username = 'uname'
+        password = 'hunter2'
+    }
+
+    nullCredentials(PasswordCredentials) { }
+    numbers(Numbers){
+        value = 5
     }
 }
-"""
 
+"""
+        buildFile
         when:
         run "model"
 
         then:
-        // just check that it doesn't blow up for now
-        output.contains("components")
-        output.contains("tasks")
+        ModelReportOutput.from(output).hasNodeStructure({
+            model {
+                nullCredentials {
+                    password(type: 'java.lang.String', origin: 'model.nullCredentials')
+                    username(type: 'java.lang.String', origin: 'model.nullCredentials')
+                }
+
+                numbers {
+                    value(nodeValue: "5")
+                }
+                primaryCredentials {
+                    password(nodeValue: 'hunter2', type: 'java.lang.String', origin: 'model.primaryCredentials')
+                    username(nodeValue: 'uname', type: 'java.lang.String', origin: 'model.primaryCredentials')
+                }
+                tasks {
+                    components(nodeValue: "task ':components'")
+                    dependencies(nodeValue: "task ':dependencies'")
+                    dependencyInsight(nodeValue: "task ':dependencyInsight'")
+                    help(nodeValue: "task ':help'")
+                    init(nodeValue: "task ':init'")
+                    model(nodeValue: "task ':model'")
+                    projects(nodeValue: "task ':projects'")
+                    properties(nodeValue: "task ':properties'")
+                    tasks(nodeValue: "task ':tasks'")
+                    wrapper()
+                }
+            }
+        })
+    }
+
+    // nb: specifically doesn't use the parsing fixture, so that the output is visualised
+    //If you're changing this you will also need to change: src/samples/userguideOutput/basicRuleSourcePlugin-model-task.out
+    def "displays a report in the correct format"() {
+        given:
+        buildFile << """
+
+@Managed
+public interface PasswordCredentials {
+    String getUsername()
+    String getPassword()
+    void setUsername(String s)
+    void setPassword(String s)
+}
+
+
+@Managed
+public interface Numbers {
+    Integer getValue()
+    void setValue(Integer i)
+}
+
+model {
+    primaryCredentials(PasswordCredentials){
+        username = 'uname'
+        password = 'hunter2'
+    }
+
+    nullCredentials(PasswordCredentials) { }
+    numbers(Numbers){
+        value = 5
+    }
+}
+
+"""
+        buildFile
+        when:
+        run "model"
+
+        then:
+        def modelReportOutput = ModelReportOutput.from(output)
+        modelReportOutput.hasTitle("Root project")
+
+        and:
+        modelReportOutput.nodeContentEquals('''
++ model
+    + nullCredentials
+          | Type:   \tPasswordCredentials |
+          | Origin: \tmodel.nullCredentials |
+          | Rules:  |
+             ⤷ model.nullCredentials
+             ⤷ model.nullCredentials
+        + password
+              | Type:   \tjava.lang.String |
+              | Origin: \tmodel.nullCredentials |
+              | Rules:  |
+                 ⤷ model.nullCredentials
+        + username
+              | Type:   \tjava.lang.String |
+              | Origin: \tmodel.nullCredentials |
+              | Rules:  |
+                 ⤷ model.nullCredentials
+    + numbers
+          | Type:   \tNumbers |
+          | Origin: \tmodel.numbers |
+          | Rules:  |
+             ⤷ model.numbers
+             ⤷ model.numbers
+        + value
+              | Type:   \tjava.lang.Integer |
+              | Origin: \tmodel.numbers |
+              | Value:  \t5 |
+              | Rules:  |
+                 ⤷ model.numbers
+    + primaryCredentials
+          | Type:   \tPasswordCredentials |
+          | Origin: \tmodel.primaryCredentials |
+          | Rules:  |
+             ⤷ model.primaryCredentials
+             ⤷ model.primaryCredentials
+        + password
+              | Type:   \tjava.lang.String |
+              | Origin: \tmodel.primaryCredentials |
+              | Value:  \thunter2 |
+              | Rules:  |
+                 ⤷ model.primaryCredentials
+        + username
+              | Type:   \tjava.lang.String |
+              | Origin: \tmodel.primaryCredentials |
+              | Value:  \tuname |
+              | Rules:  |
+                 ⤷ model.primaryCredentials
+    + tasks
+          | Type:   \torg.gradle.model.ModelMap<org.gradle.api.Task> |
+          | Origin: \tProject.<init>.tasks() |
+          | Rules:  |
+             ⤷ Project.<init>.tasks()
+        + components
+              | Type:   \torg.gradle.api.reporting.components.ComponentReport |
+              | Origin: \ttasks.addPlaceholderAction(components) |
+              | Value:  \ttask ':components' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(components)
+                 ⤷ copyToTaskContainer
+        + dependencies
+              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyReportTask |
+              | Origin: \ttasks.addPlaceholderAction(dependencies) |
+              | Value:  \ttask ':dependencies' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(dependencies)
+                 ⤷ copyToTaskContainer
+        + dependencyInsight
+              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyInsightReportTask |
+              | Origin: \ttasks.addPlaceholderAction(dependencyInsight) |
+              | Value:  \ttask ':dependencyInsight' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(dependencyInsight)
+                 ⤷ org.gradle.api.plugins.HelpTasksPlugin$Rules#addDefaultDependenciesReportConfiguration(org.gradle.api.tasks.diagnostics.DependencyInsightReportTask, org.gradle.internal.service.ServiceRegistry)
+                 ⤷ copyToTaskContainer
+        + help
+              | Type:   \torg.gradle.configuration.Help |
+              | Origin: \ttasks.addPlaceholderAction(help) |
+              | Value:  \ttask ':help' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(help)
+                 ⤷ copyToTaskContainer
+        + init
+              | Type:   \torg.gradle.buildinit.tasks.InitBuild |
+              | Origin: \ttasks.addPlaceholderAction(init) |
+              | Value:  \ttask ':init' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(init)
+                 ⤷ copyToTaskContainer
+        + model
+              | Type:   \torg.gradle.api.reporting.model.ModelReport |
+              | Origin: \ttasks.addPlaceholderAction(model) |
+              | Value:  \ttask ':model' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(model)
+                 ⤷ copyToTaskContainer
+        + projects
+              | Type:   \torg.gradle.api.tasks.diagnostics.ProjectReportTask |
+              | Origin: \ttasks.addPlaceholderAction(projects) |
+              | Value:  \ttask ':projects' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(projects)
+                 ⤷ copyToTaskContainer
+        + properties
+              | Type:   \torg.gradle.api.tasks.diagnostics.PropertyReportTask |
+              | Origin: \ttasks.addPlaceholderAction(properties) |
+              | Value:  \ttask ':properties' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(properties)
+                 ⤷ copyToTaskContainer
+        + tasks
+              | Type:   \torg.gradle.api.tasks.diagnostics.TaskReportTask |
+              | Origin: \ttasks.addPlaceholderAction(tasks) |
+              | Value:  \ttask ':tasks' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(tasks)
+                 ⤷ copyToTaskContainer
+        + wrapper
+              | Type:   \torg.gradle.api.tasks.wrapper.Wrapper |
+              | Origin: \ttasks.addPlaceholderAction(wrapper) |
+              | Value:  \ttask ':wrapper' |
+              | Rules:  |
+                 ⤷ tasks.addPlaceholderAction(wrapper)
+                 ⤷ copyToTaskContainer
+''')
     }
 }

@@ -29,7 +29,7 @@ import java.util.Collection;
 import java.util.List;
 
 @ThreadSafe
-public class UnboundRulesProcessor {
+class UnboundRulesProcessor {
 
     private final Iterable<? extends RuleBinder> binders;
     private final Transformer<? extends Collection<? extends ModelPath>, ? super ModelPath> suggestionsProvider;
@@ -61,7 +61,7 @@ public class UnboundRulesProcessor {
     }
 
     private UnboundRuleInput.Builder toInputBuilder(ModelBinding binding) {
-        ModelReference<?> reference = binding.getReference();
+        ModelReference<?> reference = binding.getPredicate().getReference();
         UnboundRuleInput.Builder builder = UnboundRuleInput.type(reference.getType());
         ModelPath path;
         if (binding.isBound()) {

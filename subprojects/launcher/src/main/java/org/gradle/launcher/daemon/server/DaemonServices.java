@@ -30,11 +30,9 @@ import org.gradle.launcher.daemon.registry.DaemonDir;
 import org.gradle.launcher.daemon.registry.DaemonRegistry;
 import org.gradle.launcher.daemon.registry.DaemonRegistryServices;
 import org.gradle.launcher.daemon.server.exec.DefaultDaemonCommandExecuter;
-import org.gradle.launcher.daemon.server.exec.StopHandlingCommandExecuter;
 import org.gradle.launcher.daemon.server.health.DaemonHealthServices;
 import org.gradle.launcher.daemon.server.health.DefaultDaemonHealthServices;
-import org.gradle.launcher.exec.BuildActionExecuter;
-import org.gradle.launcher.exec.BuildActionParameters;
+import org.gradle.launcher.exec.BuildExecuter;
 import org.gradle.logging.LoggingManagerInternal;
 import org.gradle.messaging.remote.internal.MessagingServices;
 import org.gradle.messaging.remote.internal.inet.InetAddressFactory;
@@ -66,12 +64,12 @@ public class DaemonServices extends DefaultServiceRegistry {
         builder.setUid(configuration.getUid());
 
         LOGGER.debug("Creating daemon context with opts: {}", configuration.getJvmOptions());
-        
+
         builder.setDaemonOpts(configuration.getJvmOptions());
 
         return builder.create();
     }
-    
+
     public File getDaemonLogFile() {
         final DaemonContext daemonContext = get(DaemonContext.class);
         final Long pid = daemonContext.getPid();
@@ -83,22 +81,24 @@ public class DaemonServices extends DefaultServiceRegistry {
         return new DefaultDaemonHealthServices();
     }
 
-    protected Daemon createDaemon(BuildActionExecuter<BuildActionParameters> buildActionExecuter) {
+    protected Daemon createDaemon(BuildExecuter buildActionExecuter) {
         return new Daemon(
-                new DaemonTcpServerConnector(
-                    get(ExecutorFactory.class),
-                    get(MessagingServices.class).get(InetAddressFactory.class)),
-                get(DaemonRegistry.class),
-                get(DaemonContext.class),
-                "password",
-                new StopHandlingCommandExecuter(
-                        new DefaultDaemonCommandExecuter(
-                                buildActionExecuter,
-                                get(ProcessEnvironment.class),
-                                loggingManager,
-                                getDaemonLogFile(),
-                                get(DaemonHealthServices.class))),
-                get(ExecutorFactory.class));
+            new DaemonTcpServerConnector(
+                get(ExecutorFactory.class),
+                get(MessagingServices.class).get(InetAddressFactory.class)
+            ),
+            get(DaemonRegistry.class),
+            get(DaemonContext.class),
+            "password",
+            new DefaultDaemonCommandExecuter(
+                buildActionExecuter,
+                get(ProcessEnvironment.class),
+                loggingManager,
+                getDaemonLogFile(),
+                get(DaemonHealthServices.class)
+            ),
+            get(ExecutorFactory.class)
+        );
     }
 
 }

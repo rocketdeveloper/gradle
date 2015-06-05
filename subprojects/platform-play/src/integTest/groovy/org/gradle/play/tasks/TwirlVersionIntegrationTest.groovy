@@ -45,20 +45,20 @@ class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
         succeeds "playBinary"
 
         then:
-        executedAndNotSkipped(":twirlCompileTwirlTemplatesPlayBinary", ":scalaCompilePlayBinary")
+        executedAndNotSkipped(":compilePlayBinaryTwirlTemplates", ":compilePlayBinaryScala")
 
         and:
-        file("build/playBinary/src/twirlCompileTwirlTemplatesPlayBinary/views/html/index.template.scala").exists()
+        file("build/playBinary/src/compilePlayBinaryTwirlTemplates/views/html/index.template.scala").exists()
 
         when:
         withPlayVersion("2.3.7")
         succeeds "playBinary"
 
         then:
-        executedAndNotSkipped(":twirlCompileTwirlTemplatesPlayBinary", ":scalaCompilePlayBinary")
+        executedAndNotSkipped(":compilePlayBinaryTwirlTemplates", ":compilePlayBinaryScala")
 
         and:
-        file("build/playBinary/src/twirlCompileTwirlTemplatesPlayBinary/views/html/index.template.scala").exists()
+        file("build/playBinary/src/compilePlayBinaryTwirlTemplates/views/html/index.template.scala").exists()
     }
 
     def "changing between twirl-compatible versions of play does NOT cause Twirl to recompile" () {
@@ -69,18 +69,18 @@ class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
         succeeds "playBinary"
 
         then:
-        executedAndNotSkipped(":twirlCompileTwirlTemplatesPlayBinary", ":scalaCompilePlayBinary")
+        executedAndNotSkipped(":compilePlayBinaryTwirlTemplates", ":compilePlayBinaryScala")
 
         and:
-        file("build/playBinary/src/twirlCompileTwirlTemplatesPlayBinary/views/html/index.template.scala").exists()
+        file("build/playBinary/src/compilePlayBinaryTwirlTemplates/views/html/index.template.scala").exists()
 
         when:
         withPlayVersion("2.3.7")
         succeeds "playBinary"
 
         then:
-        skipped(":twirlCompileTwirlTemplatesPlayBinary")
-        executedAndNotSkipped(":scalaCompilePlayBinary")
+        skipped(":compilePlayBinaryTwirlTemplates")
+        executedAndNotSkipped(":compilePlayBinaryScala")
     }
 
     def withPlayVersion(String playVersion) {

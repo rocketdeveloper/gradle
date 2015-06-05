@@ -15,15 +15,16 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph;
 
-import org.apache.ivy.core.module.descriptor.DependencyDescriptor;
+import com.google.common.base.Joiner;
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.*;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.result.ComponentSelectionReason;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
+import org.gradle.api.internal.artifacts.ResolveContext;
 import org.gradle.api.internal.artifacts.ResolvedConfigurationIdentifier;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolverProvider;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.*;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.CandidateModule;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.ConflictHandler;
@@ -31,7 +32,7 @@ import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflict
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.PotentialConflict;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.ResolvedArtifactsBuilder;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.ResolvedConfigurationBuilder;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedProjectConfigurationResultBuilder;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedLocalComponentsResultBuilder;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.InternalDependencyResult;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ModuleVersionSelection;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ResolutionResultBuilder;
@@ -42,7 +43,7 @@ import org.gradle.internal.resolve.ModuleVersionResolveException;
 import org.gradle.internal.resolve.resolver.ArtifactResolver;
 import org.gradle.internal.resolve.resolver.ComponentMetaDataResolver;
 import org.gradle.internal.resolve.resolver.DependencyToComponentIdResolver;
-import org.gradle.internal.resolve.resolver.ModuleToComponentResolver;
+import org.gradle.internal.resolve.resolver.ResolveContextToComponentResolver;
 import org.gradle.internal.resolve.result.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,43 +54,41 @@ public class DependencyGraphBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DependencyGraphBuilder.class);
     private final DependencyToConfigurationResolver dependencyToConfigurationResolver;
     private final ConflictHandler conflictHandler;
-    private final ModuleToComponentResolver moduleResolver;
+    private final ResolveContextToComponentResolver moduleResolver;
     private final ArtifactResolver artifactResolver;
     private final DependencyToComponentIdResolver idResolver;
     private final ComponentMetaDataResolver metaDataResolver;
 
-    public DependencyGraphBuilder(DependencyToComponentIdResolver idResolver,
-                                  ComponentMetaDataResolver metaDataResolver,
-                                  ModuleToComponentResolver moduleResolver,
-                                  ArtifactResolver artifactResolver,
+    public DependencyGraphBuilder(ResolverProvider resolverProvider,
+                                  ResolveContextToComponentResolver moduleResolver,
                                   ConflictHandler conflictHandler,
                                   DependencyToConfigurationResolver dependencyToConfigurationResolver) {
-        this.idResolver = idResolver;
-        this.metaDataResolver = metaDataResolver;
+        this.idResolver = resolverProvider.getComponentIdResolver();
+        this.metaDataResolver = resolverProvider.getComponentResolver();
+        this.artifactResolver = resolverProvider.getArtifactResolver();
         this.moduleResolver = moduleResolver;
-        this.artifactResolver = artifactResolver;
         this.conflictHandler = conflictHandler;
         this.dependencyToConfigurationResolver = dependencyToConfigurationResolver;
     }
 
-    public void resolve(ConfigurationInternal configuration,
+    public void resolve(ResolveContext resolveContext,
                         ResolutionResultBuilder newModelBuilder,
                         ResolvedConfigurationBuilder oldModelBuilder,
                         ResolvedArtifactsBuilder artifactsBuilder,
-                        ResolvedProjectConfigurationResultBuilder projectModelBuilder) throws ResolveException {
-        DependencyGraphVisitor oldModelVisitor = new ResolvedConfigurationDependencyGraphVisitor(oldModelBuilder, artifactsBuilder, metaDataResolver, artifactResolver);
+                        ResolvedLocalComponentsResultBuilder projectModelBuilder) throws ResolveException {
+        DependencyGraphVisitor oldModelVisitor = new ResolvedConfigurationDependencyGraphVisitor(oldModelBuilder, artifactsBuilder, artifactResolver);
         DependencyGraphVisitor newModelVisitor = new ResolutionResultDependencyGraphVisitor(newModelBuilder);
-        DependencyGraphVisitor projectModelVisitor = new ResolvedProjectConfigurationResultGraphVisitor(projectModelBuilder);
+        DependencyGraphVisitor projectModelVisitor = new ResolvedLocalComponentsResultGraphVisitor(projectModelBuilder);
         DependencyGraphVisitor modelVisitor = new CompositeDependencyGraphVisitor(oldModelVisitor, newModelVisitor, projectModelVisitor);
 
-        resolveDependencyGraph(configuration, modelVisitor);
+        resolveDependencyGraph(resolveContext, modelVisitor);
     }
 
-    private void resolveDependencyGraph(ConfigurationInternal configuration, DependencyGraphVisitor modelVisitor) {
+    private void resolveDependencyGraph(ResolveContext resolveContext, DependencyGraphVisitor modelVisitor) {
         DefaultBuildableComponentResolveResult rootModule = new DefaultBuildableComponentResolveResult();
-        moduleResolver.resolve(configuration.getModule(), configuration.getAll(), rootModule);
+        moduleResolver.resolve(resolveContext, rootModule);
 
-        ResolveState resolveState = new ResolveState(rootModule, configuration.getName(), idResolver, metaDataResolver, dependencyToConfigurationResolver);
+        ResolveState resolveState = new ResolveState(rootModule, resolveContext.getName(), idResolver, metaDataResolver, dependencyToConfigurationResolver);
         conflictHandler.registerResolver(new DirectDependencyForcingResolver(resolveState.root.moduleRevision));
 
         traverseGraph(resolveState, conflictHandler);
@@ -205,7 +204,6 @@ public class DependencyGraphBuilder {
         public final ModuleVersionSelectorResolveState selector;
 
         private final DependencyMetaData dependencyMetaData;
-        private final DependencyDescriptor dependencyDescriptor;
         private final ResolveState resolveState;
         private final ModuleResolutionFilter resolutionFilter;
         private final Set<ConfigurationNode> targetConfigurations = new LinkedHashSet<ConfigurationNode>();
@@ -214,7 +212,6 @@ public class DependencyGraphBuilder {
         public DependencyEdge(ConfigurationNode from, DependencyMetaData dependencyMetaData, ModuleResolutionFilter resolutionFilter, ResolveState resolveState) {
             this.from = from;
             this.dependencyMetaData = dependencyMetaData;
-            this.dependencyDescriptor = dependencyMetaData.getDescriptor();
             this.resolutionFilter = resolutionFilter;
             this.resolveState = resolveState;
             selector = resolveState.getSelector(dependencyMetaData);
@@ -222,7 +219,7 @@ public class DependencyGraphBuilder {
 
         @Override
         public String toString() {
-            return String.format("%s -> %s(%s)", from.toString(), dependencyMetaData.getRequested(), dependencyDescriptor);
+            return String.format("%s -> %s(%s)", from.toString(), dependencyMetaData.getRequested(), Joiner.on(',').join(dependencyMetaData.getModuleConfigurations()));
         }
 
         /**
@@ -284,8 +281,8 @@ public class DependencyGraphBuilder {
         }
 
         public ModuleResolutionFilter getSelector() {
-            String[] configurations = from.metaData.getHierarchy().toArray(new String[from.metaData.getHierarchy().size()]);
-            ModuleResolutionFilter selector = DefaultModuleResolutionFilter.excludeAny(dependencyDescriptor.getExcludeRules(configurations));
+            Set<String> hierarchy = from.metaData.getHierarchy();
+            ModuleResolutionFilter selector = DefaultModuleResolutionFilter.excludeAny(dependencyMetaData.getExcludeRules(hierarchy));
             return selector.intersect(resolutionFilter);
         }
 
@@ -311,7 +308,10 @@ public class DependencyGraphBuilder {
         }
 
         public ModuleDependency getModuleDependency() {
-            return ((DslOriginDependencyMetaData) dependencyMetaData).getSource();
+            if (dependencyMetaData instanceof DslOriginDependencyMetaData) {
+                return ((DslOriginDependencyMetaData) dependencyMetaData).getSource();
+            }
+            return null;
         }
 
         public Set<ComponentArtifactMetaData> getArtifacts(ConfigurationMetaData metaData1) {
@@ -889,7 +889,7 @@ public class DependencyGraphBuilder {
         public <T extends ComponentResolutionState> T select(Collection<? extends T> candidates) {
             for (ConfigurationNode configuration : root.configurations) {
                 for (DependencyEdge outgoingEdge : configuration.outgoingEdges) {
-                    if (outgoingEdge.dependencyDescriptor.isForce() && candidates.contains(outgoingEdge.targetModuleRevision)) {
+                    if (outgoingEdge.dependencyMetaData.isForce() && candidates.contains(outgoingEdge.targetModuleRevision)) {
                         outgoingEdge.targetModuleRevision.selectionReason = VersionSelectionReasons.FORCED;
                         return (T) outgoingEdge.targetModuleRevision;
                     }

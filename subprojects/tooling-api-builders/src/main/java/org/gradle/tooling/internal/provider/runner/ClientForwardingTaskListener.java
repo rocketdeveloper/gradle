@@ -16,13 +16,12 @@
 
 package org.gradle.tooling.internal.provider.runner;
 
-import org.gradle.api.Task;
 import org.gradle.api.execution.internal.InternalTaskExecutionListener;
 import org.gradle.api.execution.internal.TaskOperationInternal;
 import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.tasks.TaskStateInternal;
 import org.gradle.initialization.BuildEventConsumer;
-import org.gradle.tooling.internal.provider.ConsumerListenerConfiguration;
+import org.gradle.tooling.internal.provider.BuildClientSubscriptions;
 import org.gradle.tooling.internal.provider.events.*;
 
 import java.util.Collections;
@@ -35,11 +34,11 @@ import java.util.Collections;
 class ClientForwardingTaskListener implements InternalTaskExecutionListener {
 
     private final BuildEventConsumer eventConsumer;
-    private final ConsumerListenerConfiguration listenerConfiguration;
+    private final BuildClientSubscriptions clientSubscriptions;
 
-    ClientForwardingTaskListener(BuildEventConsumer eventConsumer, ConsumerListenerConfiguration listenerConfiguration) {
+    ClientForwardingTaskListener(BuildEventConsumer eventConsumer, BuildClientSubscriptions clientSubscriptions) {
         this.eventConsumer = eventConsumer;
-        this.listenerConfiguration = listenerConfiguration;
+        this.clientSubscriptions = clientSubscriptions;
     }
 
     @Override
@@ -64,11 +63,11 @@ class ClientForwardingTaskListener implements InternalTaskExecutionListener {
 
     private Object getParentId(TaskOperationInternal taskOperation) {
         // only set the BuildOperation as the parent if the Tooling API Consumer is listening to build progress events
-        return listenerConfiguration.isSendBuildProgressEvents() ? taskOperation.getParentId() : null;
+        return clientSubscriptions.isSendBuildProgressEvents() ? taskOperation.getParentId() : null;
     }
 
-    private static AbstractTaskResult toTaskResult(Task task) {
-        TaskStateInternal state = (TaskStateInternal) task.getState();
+    private static AbstractTaskResult toTaskResult(TaskInternal task) {
+        TaskStateInternal state = task.getState();
         long startTime = state.getStartTime();
         long endTime = state.getEndTime();
 

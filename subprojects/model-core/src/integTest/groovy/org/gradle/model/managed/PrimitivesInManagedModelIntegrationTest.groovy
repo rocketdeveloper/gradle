@@ -23,9 +23,6 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
     def "values of primitive types and boxed primitive types are widened as usual when using groovy"() {
         when:
         buildScript '''
-            import org.gradle.model.*
-            import org.gradle.model.collection.*
-
             @Managed
             interface PrimitiveTypes {
                 Long getLongPropertyFromInt()
@@ -69,7 +66,6 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
         file('buildSrc/src/main/java/Rules.java') << '''
             import org.gradle.api.*;
             import org.gradle.model.*;
-            import org.gradle.model.collection.*;
 
             @Managed
             interface PrimitiveProperty {
@@ -127,9 +123,6 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
     def "can set/get properties of all supported unmanaged types"() {
         when:
         buildScript '''
-            import org.gradle.model.*
-            import org.gradle.model.collection.*
-
             @Managed
             interface AllSupportedUnmanagedTypes {
                 Boolean getBooleanProperty()
@@ -159,6 +152,10 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
                 String getStringProperty()
 
                 void setStringProperty(String value)
+
+                File getFile()
+
+                void setFile(File file)
             }
 
             class RulePlugin extends RuleSource {
@@ -171,6 +168,7 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
                     element.bigIntegerProperty = new BigInteger("4")
                     element.bigDecimalProperty = new BigDecimal("5.5")
                     element.stringProperty = "test"
+                    element.file = new File('sample.txt')
                 }
 
                 @Mutate
@@ -184,6 +182,7 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
                             println "big integer: ${element.bigIntegerProperty}"
                             println "big decimal: ${element.bigDecimalProperty}"
                             println "string: ${element.stringProperty}"
+                            println "file: ${element.file}"
                         }
                     }
                 }
@@ -203,5 +202,30 @@ class PrimitivesInManagedModelIntegrationTest extends AbstractIntegrationSpec {
         output.contains "big integer: 4"
         output.contains "big decimal: 5.5"
         output.contains "string: test"
+        output.contains "file: sample.txt"
+    }
+
+    def "can specify managed models with file types"() {
+        when:
+        buildScript '''
+            @Managed
+            interface FileContainer {
+                File getFile()
+                void setFile(File file)
+            }
+
+            model {
+                gradleFileContainer(FileContainer) {
+                    file = file('sample.txt')
+                }
+
+                jdkFileContainer(FileContainer) {
+                    file = new File('sample.txt')
+                }
+            }
+        '''
+
+        then:
+        succeeds "model"
     }
 }

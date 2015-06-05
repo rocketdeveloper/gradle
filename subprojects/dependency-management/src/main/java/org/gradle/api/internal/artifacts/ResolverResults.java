@@ -16,22 +16,37 @@
 
 package org.gradle.api.internal.artifacts;
 
+import org.gradle.api.Action;
 import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.result.ResolutionResult;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.ResolvedArtifactsBuilder;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.ResolvedGraphResults;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.TransientConfigurationResultsBuilder;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedProjectConfigurationResults;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedProjectConfiguration;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedLocalComponentsResult;
 
 public class ResolverResults {
     private ResolvedConfiguration resolvedConfiguration;
     private ResolutionResult resolutionResult;
     private ResolveException fatalFailure;
-    private ResolvedProjectConfigurationResults resolvedProjectConfigurationResults;
+    private ResolvedLocalComponentsResult resolvedLocalComponentsResult;
     private TransientConfigurationResultsBuilder transientConfigurationResultsBuilder;
     private ResolvedGraphResults graphResults;
     private ResolvedArtifactsBuilder artifactResults;
+
+    public boolean hasError() {
+        if (fatalFailure != null) {
+            return true;
+        }
+        if (graphResults != null && graphResults.hasError()) {
+            return true;
+        }
+        if (resolvedConfiguration != null && resolvedConfiguration.hasError()) {
+            return true;
+        }
+        return false;
+    }
 
     //old model, slowly being replaced by the new model
     public ResolvedConfiguration getResolvedConfiguration() {
@@ -48,12 +63,23 @@ public class ResolverResults {
         return resolutionResult;
     }
 
-    public ResolvedProjectConfigurationResults getResolvedProjectConfigurationResults() {
+    // TODO:DAZ Remove this
+    public void eachResolvedProject(Action<ResolvedProjectConfiguration> action) {
         assertHasResult();
         if (fatalFailure != null) {
             throw fatalFailure;
         }
-        return resolvedProjectConfigurationResults;
+        for (ResolvedProjectConfiguration resolvedProjectConfiguration : resolvedLocalComponentsResult.getResolvedProjectConfigurations()) {
+            action.execute(resolvedProjectConfiguration);
+        }
+    }
+
+    public ResolvedLocalComponentsResult getResolvedLocalComponents() {
+        assertHasResult();
+        if (fatalFailure != null) {
+            throw fatalFailure;
+        }
+        return resolvedLocalComponentsResult;
     }
 
     private void assertHasResult() {
@@ -68,9 +94,9 @@ public class ResolverResults {
         }
     }
 
-    public void resolved(ResolutionResult resolutionResult, ResolvedProjectConfigurationResults resolvedProjectConfigurationResults) {
+    public void resolved(ResolutionResult resolutionResult, ResolvedLocalComponentsResult resolvedLocalComponentsResult) {
         this.resolutionResult = resolutionResult;
-        this.resolvedProjectConfigurationResults = resolvedProjectConfigurationResults;
+        this.resolvedLocalComponentsResult = resolvedLocalComponentsResult;
         this.fatalFailure = null;
     }
 
@@ -79,14 +105,17 @@ public class ResolverResults {
         this.fatalFailure = failure;
     }
 
-    public void withResolvedConfiguration(ResolvedConfiguration resolvedConfiguration) {
-        this.resolvedConfiguration = resolvedConfiguration;
-    }
-
     public void retainState(ResolvedGraphResults graphResults, ResolvedArtifactsBuilder artifactResults, TransientConfigurationResultsBuilder transientConfigurationResultsBuilder) {
         this.graphResults = graphResults;
         this.artifactResults = artifactResults;
         this.transientConfigurationResultsBuilder = transientConfigurationResultsBuilder;
+    }
+
+    public void withResolvedConfiguration(ResolvedConfiguration resolvedConfiguration) {
+        this.resolvedConfiguration = resolvedConfiguration;
+        this.graphResults = null;
+        this.transientConfigurationResultsBuilder = null;
+        this.artifactResults = null;
     }
 
     public ResolvedGraphResults getGraphResults() {

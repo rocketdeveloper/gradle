@@ -25,6 +25,7 @@ import org.gradle.util.CollectionUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
+import java.util.Collections;
 import java.util.List;
 
 class WatchServicePoller {
@@ -57,9 +58,14 @@ class WatchServicePoller {
                 return toEvent(kind, file);
             }
         };
-        List<FileWatcherEvent> events = CollectionUtils.collect(watchKey.pollEvents(), watchEventTransformer);
+
+        List<WatchEvent<?>> watchEvents = watchKey.pollEvents();
         watchKey.reset();
-        return events;
+        if (watchEvents.isEmpty()) {
+            return Collections.singletonList(FileWatcherEvent.delete(watchedPath.toFile()));
+        } else {
+            return CollectionUtils.collect(watchEvents, watchEventTransformer);
+        }
     }
 
     private FileWatcherEvent toEvent(WatchEvent.Kind kind, File file) {

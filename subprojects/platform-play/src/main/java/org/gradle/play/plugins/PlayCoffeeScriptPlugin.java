@@ -35,7 +35,6 @@ import org.gradle.model.RuleSource;
 import org.gradle.platform.base.BinaryTasks;
 import org.gradle.platform.base.LanguageType;
 import org.gradle.platform.base.LanguageTypeBuilder;
-import org.gradle.platform.base.internal.ComponentSpecInternal;
 import org.gradle.play.PlayApplicationBinarySpec;
 import org.gradle.play.PlayApplicationSpec;
 import org.gradle.play.tasks.PlayCoffeeScriptCompile;
@@ -47,7 +46,7 @@ import static org.apache.commons.lang.StringUtils.capitalize;
 /**
  * Plugin for adding coffeescript compilation to a Play application.  Adds support for
  * defining {@link org.gradle.language.coffeescript.CoffeeScriptSourceSet} source sets.  A
- * "coffeeScriptAssets" source set is created by default.
+ * "coffeeScript" source set is created by default.
  */
 @SuppressWarnings("UnusedDeclaration")
 @Incubating
@@ -74,10 +73,13 @@ public class PlayCoffeeScriptPlugin extends RuleSource {
         components.beforeEach(new Action<PlayApplicationSpec>() {
             @Override
             public void execute(PlayApplicationSpec playComponent) {
-                // TODO - should have some way to lookup using internal type
-                CoffeeScriptSourceSet coffeeScriptSourceSet = ((ComponentSpecInternal) playComponent).getSources().create("coffeeScriptAssets", CoffeeScriptSourceSet.class);
-                coffeeScriptSourceSet.getSource().srcDir("app/assets");
-                coffeeScriptSourceSet.getSource().include("**/*.coffee");
+                playComponent.getSource().create("coffeeScript", CoffeeScriptSourceSet.class, new Action<CoffeeScriptSourceSet>() {
+                    @Override
+                    public void execute(CoffeeScriptSourceSet coffeeScriptSourceSet) {
+                        coffeeScriptSourceSet.getSource().srcDir("app/assets");
+                        coffeeScriptSourceSet.getSource().include("**/*.coffee");
+                    }
+                });
             }
         });
     }

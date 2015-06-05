@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import org.gradle.build.Install
+
 import org.gradle.build.BuildTypes
+import org.gradle.build.Install
 
 defaultTasks 'assemble'
 apply plugin: 'java-base'
@@ -31,7 +32,7 @@ buildTypes {
     quickCheck "doc:checkstyleApi", "docs:check", "codeQuality", "test"
 
     // For testing pull requests
-    pullRequestValidation "doc:checkstyleApi", "docs:check", "codeQuality"
+    pullRequestValidation "doc:checkstyleApi", "docs:check", "codeQuality", "core:test", "dependencyManagement:test"
 
     // A full (in-process) test
     developerBuild "check"
@@ -67,7 +68,7 @@ buildTypes {
     promotionBuild "verifyIsProductionBuildEnvironment", "clean", "docs:check", "buildDists", "distributions:integTest", "uploadArchives"
 
     //Initial smoke test for java 9
-    java9Build "java9Test", useIncomingDistributions: true
+    java9Build "java9Test", "java9IntegTest", useIncomingDistributions: true
 }
 
 ext {
@@ -103,13 +104,13 @@ ext {
         project(it)
     }
     publishedProjects = [
-            project(':core'),
-            project(':toolingApi'),
-            project(':wrapper'),
-            project(':baseServices'),
-            project(':baseServicesGroovy'),
-            project(':messaging'),
-            project(':resources')
+        project(':core'),
+        project(':toolingApi'),
+        project(':wrapper'),
+        project(':baseServices'),
+        project(':baseServicesGroovy'),
+        project(':messaging'),
+        project(':resources')
     ]
 }
 
@@ -142,6 +143,7 @@ subprojects {
     if (project in groovyProjects) {
         apply from: "$rootDir/gradle/groovyProject.gradle"
         apply from: "$rootDir/gradle/testWithUnknownOS.gradle"
+        apply from: "$rootDir/gradle/java9.gradle"
         check.dependsOn ":docs:checkstyleApi"
         check.dependsOn "codeQuality"
     }
@@ -182,9 +184,9 @@ dependencies {
 }
 
 task verifyIsProductionBuildEnvironment << {
-    assert javaVersion.java7 : "Must use a Java 7 compatible JVM to perform this build. Current JVM is ${jvm}"
+    assert javaVersion.java7: "Must use a Java 7 compatible JVM to perform this build. Current JVM is ${jvm}"
     def systemCharset = java.nio.charset.Charset.defaultCharset().name()
-    assert systemCharset == "UTF-8" : "Platform encoding must be UTF-8. Is currently $systemCharset. Set -Dfile.encoding=UTF-8."
+    assert systemCharset == "UTF-8": "Platform encoding must be UTF-8. Is currently $systemCharset. Set -Dfile.encoding=UTF-8."
 }
 
 task waitForDaemonsToDie {
@@ -218,3 +220,4 @@ task installAll(type: Install) {
 
 
 apply from: "gradle/intTestImage.gradle"
+apply from: 'gradle/pullRequestBuild.gradle'

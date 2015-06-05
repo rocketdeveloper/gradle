@@ -16,14 +16,10 @@
 
 package org.gradle.platform.base.internal.registry;
 
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import org.gradle.api.*;
-import org.gradle.api.specs.Spec;
-import org.gradle.internal.Actions;
+import org.gradle.api.Action;
+import org.gradle.api.Task;
+import org.gradle.api.internal.project.taskfactory.ITaskFactory;
 import org.gradle.internal.Cast;
 import org.gradle.language.base.plugins.ComponentModelBasePlugin;
 import org.gradle.model.InvalidModelRuleDeclarationException;
@@ -38,7 +34,6 @@ import org.gradle.platform.base.InvalidModelException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 public class BinaryTasksModelRuleExtractor extends AbstractAnnotationDrivenComponentModelRuleExtractor<BinaryTasks> {
 
@@ -52,14 +47,21 @@ public class BinaryTasksModelRuleExtractor extends AbstractAnnotationDrivenCompo
             verifyMethodSignature(dataCollector, ruleDefinition);
 
             final Class<S> binaryType = dataCollector.getParameterType(BinarySpec.class);
-
             final BinaryTaskRule<R, S> binaryTaskRule = new BinaryTaskRule<R, S>(binaryType, ruleDefinition);
-            return new ExtractedModelAction(ModelActionRole.Defaults, ImmutableList.of(ComponentModelBasePlugin.class), DirectNodeModelAction.of(ModelReference.of("binaries"), new SimpleModelRuleDescriptor("binaries*.create()"), new Action<MutableModelNode>() {
-                @Override
-                public void execute(MutableModelNode modelNode) {
-                    modelNode.applyToAllLinks(ModelActionRole.Finalize, binaryTaskRule);
-                }
-            }));
+            return new ExtractedModelAction(
+                ModelActionRole.Defaults,
+                ImmutableList.of(ComponentModelBasePlugin.class),
+                DirectNodeNoInputsModelAction.of(
+                    ModelReference.of("binaries"),
+                    new SimpleModelRuleDescriptor("binaries*.create()"),
+                    new Action<MutableModelNode>() {
+                        @Override
+                        public void execute(MutableModelNode modelNode) {
+                            modelNode.applyToAllLinks(ModelActionRole.Finalize, binaryTaskRule);
+                        }
+                    }
+                )
+            );
         } catch (InvalidModelException e) {
             throw invalidModelRule(ruleDefinition, e);
         }
@@ -85,118 +87,32 @@ public class BinaryTasksModelRuleExtractor extends AbstractAnnotationDrivenCompo
             super(ModelReference.of(binaryType), binaryType, ruleDefinition);
         }
 
-        public void execute(final MutableModelNode modelNode, final T binary, List<ModelView<?>> inputs) {
+        @Override
+        public List<ModelReference<?>> getInputs() {
+            return ImmutableList.<ModelReference<?>>builder().add(ModelReference.of(ITaskFactory.class)).addAll(super.getInputs()).build();
+        }
 
-            ModelMap<Task> cast = new DomainObjectSetBackedModelMap<Task>(
-                binary,
+        public void execute(final MutableModelNode modelNode, final T binary, List<ModelView<?>> inputs) {
+            NamedEntityInstantiator<Task> taskFactory = Cast.uncheckedCast(ModelViews.getInstance(inputs.get(0), ITaskFactory.class));
+            ModelMap<Task> cast = DomainObjectSetBackedModelMap.wrap(
                 Task.class,
                 binary.getTasks(),
-                new NamedEntityInstantiator<Task>() {
+                taskFactory,
+                new Task.Namer(),
+                new Action<Task>() {
                     @Override
-                    public <S extends Task> S create(String name, Class<S> type) {
-                        modelNode.getPrivateData(ModelType.of(BinarySpec.class)).getTasks().create(name, type, Actions.doNothing());
-                        return null; // we know it's not needed
+                    public void execute(Task task) {
+                        binary.getTasks().add(task);
+                        binary.builtBy(task);
                     }
-                },
-                new Namer<Object>() {
-                    @Override
-                    public String determineName(Object object) {
-                        return Cast.cast(Task.class, object).getName();
-                    }
-                }
-            );
+                });
 
-            List<ModelView<?>> inputsWithBinary = new ArrayList<ModelView<?>>(inputs.size() + 1);
-            inputsWithBinary.addAll(inputs);
+            List<ModelView<?>> inputsWithBinary = new ArrayList<ModelView<?>>(inputs.size());
+            inputsWithBinary.addAll(inputs.subList(1, inputs.size()));
             inputsWithBinary.add(InstanceModelView.of(getSubject().getPath(), getSubject().getType(), binary));
 
             invoke(inputsWithBinary, cast, binary, binary);
         }
     }
 
-    private static class DomainObjectSetBackedModelMap<T> extends DomainObjectCollectionBackedModelMap<T, DomainObjectSet<T>> {
-
-        private final BinarySpec binary;
-
-        public DomainObjectSetBackedModelMap(BinarySpec binary, Class<T> elementClass, DomainObjectSet<T> backingSet, NamedEntityInstantiator<T> instantiator, Namer<Object> namer) {
-            super(elementClass, backingSet, instantiator, namer);
-            this.binary = binary;
-        }
-
-        @Override
-        protected <S> ModelMap<S> toNonSubtypeMap(Class<S> type) {
-            DomainObjectSet<S> cast = toNonSubtype(type);
-            return new DomainObjectSetBackedModelMap<S>(binary, type, cast, new NamedEntityInstantiator<S>() {
-                @Override
-                public <D extends S> D create(String name, Class<D> type) {
-                    throw new IllegalArgumentException(String.format("Cannot create an item of type %s as this is not a subtype of %s.", type, elementClass.toString()));
-                }
-            }, namer);
-        }
-
-        private <S> DomainObjectSet<S> toNonSubtype(final Class<S> type) {
-            DomainObjectSet<T> matching = backingCollection.matching(new Spec<T>() {
-                @Override
-                public boolean isSatisfiedBy(T element) {
-                    return type.isInstance(element);
-                }
-            });
-
-            return Cast.uncheckedCast(matching);
-        }
-
-        protected <S extends T> ModelMap<S> toSubtypeMap(Class<S> itemSubtype) {
-            NamedEntityInstantiator<S> instantiator = Cast.uncheckedCast(this.instantiator);
-            return new DomainObjectSetBackedModelMap<S>(binary, itemSubtype, backingCollection.withType(itemSubtype), instantiator, namer);
-        }
-
-        @Nullable
-        @Override
-        public T get(String name) {
-            return Iterables.find(backingCollection, new HasNamePredicate<T>(name, namer), null);
-        }
-
-        @Override
-        public Set<String> keySet() {
-            return Sets.newHashSet(Iterables.transform(backingCollection, new ToName<T>(namer)));
-        }
-
-        @Override
-        protected void onCreate(T item) {
-            binary.builtBy(item);
-        }
-
-        @Override
-        public <S> void withType(Class<S> type, Action<? super S> configAction) {
-            toNonSubtype(type).all(configAction);
-        }
-    }
-
-    private static class HasNamePredicate<T> implements Predicate<T> {
-        private final String name;
-        private final Namer<? super T> namer;
-
-        public HasNamePredicate(String name, Namer<? super T> namer) {
-            this.name = name;
-            this.namer = namer;
-        }
-
-        @Override
-        public boolean apply(@Nullable T input) {
-            return namer.determineName(input).equals(name);
-        }
-    }
-
-    private static class ToName<T> implements Function<T, String> {
-        private final Namer<? super T> namer;
-
-        public ToName(Namer<? super T> namer) {
-            this.namer = namer;
-        }
-
-        @Override
-        public String apply(@Nullable T input) {
-            return namer.determineName(input);
-        }
-    }
 }

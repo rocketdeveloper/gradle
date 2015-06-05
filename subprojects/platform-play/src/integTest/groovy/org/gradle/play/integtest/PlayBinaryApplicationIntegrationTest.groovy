@@ -28,9 +28,9 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
 
         then:
         executedAndNotSkipped(
-                ":routesCompileRoutesSourcesPlayBinary",
-                ":twirlCompileTwirlTemplatesPlayBinary",
-                ":scalaCompilePlayBinary",
+                ":compilePlayBinaryRoutes",
+                ":compilePlayBinaryTwirlTemplates",
+                ":compilePlayBinaryScala",
                 ":createPlayBinaryJar",
                 ":createPlayBinaryAssetsJar",
                 ":playBinary",
@@ -43,16 +43,15 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
         succeeds("createPlayBinaryJar")
 
         then:
-        skipped(":createPlayBinaryJar", ":twirlCompileTwirlTemplatesPlayBinary")
+        skipped(":createPlayBinaryJar", ":compilePlayBinaryTwirlTemplates")
     }
 
     def "can run play app"() {
         setup:
-        httpPort = portFinder.nextAvailable
         buildFile << """
             model {
                 tasks.runPlayBinary {
-                    httpPort = $httpPort
+                    httpPort = ${runningApp.selectPort()}
                 }
             }
         """
@@ -64,10 +63,10 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
         GradleHandle gradleHandle = executer.withTasks("runPlayBinary").start()
 
         then:
-        verifyStarted()
+        runningApp.verifyStarted()
 
         and:
-        verifyRunningApp()
+        runningApp.verifyContent()
 
         when: "stopping gradle"
         userInput.write(4) // ctrl+d
@@ -76,7 +75,7 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
         gradleHandle.waitForFinish()
 
         then: "play server is stopped too"
-        verifyStopped()
+        runningApp.verifyStopped()
     }
 
     void verifyJars() {

@@ -17,40 +17,31 @@
 package org.gradle.model.internal.registry;
 
 import org.gradle.api.Action;
-import org.gradle.api.Nullable;
 import org.gradle.model.InvalidModelRuleException;
 import org.gradle.model.ModelRuleBindingException;
-import org.gradle.model.internal.core.ModelPath;
 import org.gradle.model.internal.core.ModelPromise;
-import org.gradle.model.internal.core.ModelReference;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.report.IncompatibleTypeReferenceReporter;
 
 class PathBinderCreationListener extends ModelBinding {
-    private final Action<? super ModelNodeInternal> bindAction;
-    private final ModelPath path;
+    private final Action<ModelBinding> bindAction;
 
-    public PathBinderCreationListener(ModelRuleDescriptor descriptor, ModelReference<?> reference, boolean writable, Action<? super ModelNodeInternal> bindAction) {
-        super(descriptor, reference, writable);
+    public PathBinderCreationListener(ModelRuleDescriptor descriptor, BindingPredicate predicate, boolean writable, Action<ModelBinding> bindAction) {
+        super(descriptor, predicate, writable);
         this.bindAction = bindAction;
-        this.path = reference.getPath();
     }
 
-    @Nullable
-    @Override
-    public ModelPath getPath() {
-        return path;
-    }
-
-    public boolean onCreate(ModelNodeInternal node) {
+    public void onCreate(ModelNodeInternal node) {
+        if (boundTo != null) {
+            throw new IllegalStateException(String.format("Reference %s for %s is already bound to %s.", predicate.getReference(), referrer, boundTo));
+        }
         ModelPromise promise = node.getPromise();
         if (isTypeCompatible(promise)) {
             boundTo = node;
-            bindAction.execute(node);
-            return true; // bound by type and path, stop listening
+            bindAction.execute(this);
         } else {
             throw new InvalidModelRuleException(referrer, new ModelRuleBindingException(
-                    IncompatibleTypeReferenceReporter.of(node, promise, reference, writable).asString()
+                IncompatibleTypeReferenceReporter.of(node, promise, predicate.getReference(), writable).asString()
             ));
         }
     }

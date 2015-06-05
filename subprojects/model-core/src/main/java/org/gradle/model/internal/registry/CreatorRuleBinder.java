@@ -17,16 +17,15 @@
 package org.gradle.model.internal.registry;
 
 import org.gradle.model.internal.core.ModelCreator;
-import org.gradle.model.internal.core.ModelReference;
 
 import java.util.Collection;
 import java.util.List;
 
-public class CreatorRuleBinder extends RuleBinder {
+class CreatorRuleBinder extends RuleBinder {
     private final ModelCreator creator;
 
-    public CreatorRuleBinder(ModelCreator creator, List<ModelReference<?>> inputs, Collection<RuleBinder> binders) {
-        super(inputs, creator.getDescriptor(), binders);
+    public CreatorRuleBinder(ModelCreator creator, BindingPredicate subject, List<BindingPredicate> inputs, Collection<RuleBinder> binders) {
+        super(subject, inputs, creator.getDescriptor(), binders);
         this.creator = creator;
     }
 

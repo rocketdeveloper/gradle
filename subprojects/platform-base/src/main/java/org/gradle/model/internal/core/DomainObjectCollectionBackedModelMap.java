@@ -18,11 +18,9 @@ package org.gradle.model.internal.core;
 
 import org.gradle.api.Action;
 import org.gradle.api.DomainObjectCollection;
-import org.gradle.api.Namer;
 import org.gradle.api.Nullable;
 import org.gradle.api.specs.Spec;
 import org.gradle.internal.Actions;
-import org.gradle.internal.Cast;
 import org.gradle.model.ModelMap;
 import org.gradle.model.RuleSource;
 
@@ -30,19 +28,19 @@ import java.util.Collection;
 
 import static org.gradle.internal.Cast.uncheckedCast;
 
-abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainObjectCollection<T>> implements ModelMap<T> {
+abstract public class DomainObjectCollectionBackedModelMap<T> implements ModelMap<T> {
 
-    protected final C backingCollection;
     protected final Class<T> elementClass;
     protected final NamedEntityInstantiator<T> instantiator;
-    protected final Namer<Object> namer;
+    protected final Action<? super T> onCreateAction;
 
-    protected DomainObjectCollectionBackedModelMap(Class<T> elementClass, C backingCollection, NamedEntityInstantiator<T> instantiator, Namer<Object> namer) {
+    protected DomainObjectCollectionBackedModelMap(Class<T> elementClass, NamedEntityInstantiator<T> instantiator, Action<? super T> onCreateAction) {
         this.elementClass = elementClass;
-        this.backingCollection = backingCollection;
         this.instantiator = instantiator;
-        this.namer = namer;
+        this.onCreateAction = onCreateAction;
     }
+
+    protected abstract DomainObjectCollection<T> getBackingCollection();
 
     @Override
     public <S> ModelMap<S> withType(final Class<S> type) {
@@ -65,12 +63,12 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
 
     @Override
     public int size() {
-        return backingCollection.size();
+        return getBackingCollection().size();
     }
 
     @Override
     public boolean isEmpty() {
-        return backingCollection.isEmpty();
+        return getBackingCollection().isEmpty();
     }
 
     @Nullable
@@ -87,7 +85,7 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
     @Override
     public boolean containsValue(Object item) {
         //noinspection SuspiciousMethodCalls
-        return backingCollection.contains(item);
+        return getBackingCollection().contains(item);
     }
 
     @Override
@@ -107,13 +105,9 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
 
     @Override
     public <S extends T> void create(String name, Class<S> type, Action<? super S> configAction) {
-        instantiator.create(name, type);
-        S task = Cast.uncheckedCast(get(name));
-        configAction.execute(task);
-        onCreate(task);
-    }
-
-    protected void onCreate(T item) {
+        S s = instantiator.create(name, type);
+        configAction.execute(s);
+        onCreateAction.execute(s);
     }
 
     @Override
@@ -123,7 +117,7 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
 
     @Override
     public void all(Action<? super T> configAction) {
-        backingCollection.all(configAction);
+        getBackingCollection().all(configAction);
     }
 
     @Override
@@ -143,7 +137,7 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
 
     @Override
     public Collection<T> values() {
-        return backingCollection;
+        return getBackingCollection();
     }
 
     @Override
@@ -157,22 +151,13 @@ abstract public class DomainObjectCollectionBackedModelMap<T, C extends DomainOb
     }
 
     @Override
-    public void named(String name, Action<? super T> configAction) {
-        backingCollection.matching(new WithName<T>(name, namer)).all(configAction);
+    public void named(final String name, Action<? super T> configAction) {
+        getBackingCollection().matching(new Spec<T>() {
+            @Override
+            public boolean isSatisfiedBy(T element) {
+                return get(name) == element;
+            }
+        }).all(configAction);
     }
 
-    private static class WithName<T> implements Spec<T> {
-        private final String name;
-        private final org.gradle.api.Namer<? super T> namer;
-
-        public WithName(String name, org.gradle.api.Namer<? super T> namer) {
-            this.name = name;
-            this.namer = namer;
-        }
-
-        @Override
-        public boolean isSatisfiedBy(T element) {
-            return namer.determineName(element).equals(name);
-        }
-    }
 }

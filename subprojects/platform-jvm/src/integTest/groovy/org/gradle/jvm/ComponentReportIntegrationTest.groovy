@@ -35,7 +35,17 @@ plugins {
 
 model {
     components {
-        someLib(JvmLibrarySpec)
+        someLib(JvmLibrarySpec) {
+            sources {
+                java {
+                    dependencies {
+                        library 'library-only'
+                        project 'project-only'
+                        library 'some-library' project 'some-project'
+                    }
+                }
+            }
+        }
     }
 }
 """
@@ -49,9 +59,13 @@ JVM library 'someLib'
 
 Source sets
     Java source 'someLib:java'
-        src/someLib/java
+        srcDir: src/someLib/java
+        dependencies
+            library 'library-only'
+            project 'project-only'
+            project 'some-project' library 'some-library'
     JVM resources 'someLib:resources'
-        src/someLib/resources
+        srcDir: src/someLib/resources
 
 Binaries
     Jar 'someLibJar'
@@ -89,9 +103,9 @@ JVM library 'myLib'
 
 Source sets
     Java source 'myLib:java'
-        src/myLib/java
+        srcDir: src/myLib/java
     JVM resources 'myLib:resources'
-        src/myLib/resources
+        srcDir: src/myLib/resources
 
 Binaries
     Jar 'java5MyLibJar'
@@ -143,9 +157,9 @@ JVM library 'myLib'
 
 Source sets
     Java source 'myLib:java'
-        src/myLib/java
+        srcDir: src/myLib/java
     JVM resources 'myLib:resources'
-        src/myLib/resources
+        srcDir: src/myLib/resources
 
 Binaries
     Jar 'java5MyLibJar'
@@ -170,9 +184,9 @@ JVM library 'myLib2'
 
 Source sets
     Java source 'myLib2:java'
-        src/myLib2/java
+        srcDir: src/myLib2/java
     JVM resources 'myLib2:resources'
-        src/myLib2/resources
+        srcDir: src/myLib2/resources
 
 Binaries
     Jar 'myLib2Jar' (not buildable)

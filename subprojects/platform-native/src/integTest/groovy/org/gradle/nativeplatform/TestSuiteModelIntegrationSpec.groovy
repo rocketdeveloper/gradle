@@ -16,25 +16,15 @@
 
 package org.gradle.nativeplatform
 
+import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.EnableModelDsl
-import org.gradle.util.TextUtil
 
 class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
 
     def "setup"() {
         EnableModelDsl.enable(executer)
-
         buildScript """
-            import org.gradle.api.internal.rules.*
-            import org.gradle.internal.service.*
-            import org.gradle.api.internal.project.*
-            import org.gradle.internal.reflect.*
-            import org.gradle.model.internal.core.rule.describe.*
-            import org.gradle.platform.base.internal.*
-            import org.gradle.language.base.internal.*
-            import org.gradle.api.internal.file.*
-
             apply type: NativeBinariesTestPlugin
 
             interface CustomTestSuite extends TestSuiteSpec {}
@@ -50,23 +40,14 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
             }
 
             class TestSuiteTypeRules extends RuleSource {
-                @Mutate
-                public void registerCustomTestSuiteFactory(RuleAwareNamedDomainObjectFactoryRegistry<TestSuiteSpec> factoryRegistry, ServiceRegistry serviceRegistry,
-                                                            final ProjectSourceSet projectSourceSet, final ProjectIdentifier projectIdentifier) {
-                    final Instantiator instantiator = serviceRegistry.get(Instantiator.class)
-                    final FileResolver fileResolver = serviceRegistry.get(FileResolver.class)
-                    factoryRegistry.registerFactory(CustomTestSuite, new NamedDomainObjectFactory<CustomTestSuite>() {
-                        public CustomTestSuite create(String suiteName) {
-                            FunctionalSourceSet functionalSourceSet = instantiator.newInstance(DefaultFunctionalSourceSet, suiteName, instantiator, projectSourceSet)
-                            functionalSourceSet.registerFactory(CustomLanguageSourceSet.class, new NamedDomainObjectFactory<CustomLanguageSourceSet>() {
-                                public CustomLanguageSourceSet create(String name) {
-                                    return BaseLanguageSourceSet.create(DefaultCustomLanguageSourceSet.class, name, suiteName, fileResolver, instantiator);
-                                }
-                            });
-                            ComponentSpecIdentifier id = new DefaultComponentSpecIdentifier(projectIdentifier.getPath(), suiteName)
-                            return BaseComponentSpec.create(DefaultCustomTestSuite, id, functionalSourceSet, instantiator)
-                        }
-                    }, new SimpleModelRuleDescriptor("TestSuiteTypeRules.registerCustomTestSuiteFactory()"))
+                @ComponentType
+                void registerCustomTestSuiteType(ComponentTypeBuilder<CustomTestSuite> builder) {
+                    builder.defaultImplementation(DefaultCustomTestSuite)
+                }
+
+                @LanguageType
+                void registerCustomLanguageType(LanguageTypeBuilder<CustomLanguageSourceSet> builder) {
+                    builder.defaultImplementation(DefaultCustomLanguageSourceSet)
                 }
             }
 
@@ -94,16 +75,43 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
         """
     }
 
+    void withTestBinaryFactory() {
+        buildFile << """
+            import org.gradle.api.internal.project.taskfactory.ITaskFactory
+
+            interface CustomTestBinary extends TestSuiteBinarySpec {
+                String getData()
+            }
+
+            class DefaultCustomTestBinary extends BaseBinarySpec implements CustomTestBinary {
+                TestSuiteSpec testSuite
+                String data = "foo"
+            }
+
+            class TestBinaryTypeRules extends RuleSource {
+                @BinaryType
+                public void registerCustomTestBinaryFactory(BinaryTypeBuilder<CustomTestBinary> builder) {
+                    builder.defaultImplementation(DefaultCustomTestBinary)
+                }
+            }
+
+            apply type: TestBinaryTypeRules
+        """
+    }
+
     def "test suite sources and binaries containers are visible in model report"() {
         when:
-        succeeds "model"
+        run "model"
 
         then:
-        output.contains(TextUtil.toPlatformLineSeparators("""
-    testSuites
-        main
-            binaries
-            sources"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            testSuites {
+                main {
+                    binaries()
+                    sources()
+                }
+            }
+        }
     }
 
     def "can reference sources container for a test suite in a rule"() {
@@ -115,7 +123,7 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
                     create("printSourceNames") {
                         def sources = $("testSuites.main.sources")
                         doLast {
-                            println "names: ${sources*.name}"
+                            println "names: ${sources.values()*.name}"
                         }
                     }
                 }
@@ -155,24 +163,34 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        succeeds "model"
+        run "model"
 
         then:
-        output.contains(TextUtil.toPlatformLineSeparators("""
-    testSuites
-        foo
-            binaries
-            sources
-                bar
-        main
-            binaries
-            sources
-                main
-                test
-        secondary
-            binaries
-            sources
-                test"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            testSuites {
+                foo {
+                    binaries()
+                    sources {
+                        bar(nodeValue: "DefaultCustomLanguageSourceSet 'foo:bar'")
+                    }
+                }
+                main {
+                    binaries()
+                    sources {
+                        main(nodeValue: "DefaultCustomLanguageSourceSet 'main:main'")
+                        test(nodeValue: "DefaultCustomLanguageSourceSet 'main:test'")
+                    }
+                }
+                secondary {
+                    binaries()
+                    sources {
+                        test(nodeValue: "DefaultCustomLanguageSourceSet 'secondary:test'")
+
+                    }
+                }
+            }
+        }
+
     }
 
     def "can reference sources container elements in a rule"() {
@@ -202,8 +220,6 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
         given:
         withMainSourceSet()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class TaskRules extends RuleSource {
                 @Mutate
                 void addPrintSourceDisplayNameTask(ModelMap<Task> tasks, @Path("testSuites.main.sources.main") CustomLanguageSourceSet sourceSet) {
@@ -229,8 +245,6 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
         given:
         withMainSourceSet()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class SourceSetRemovalRules extends RuleSource {
                 @Mutate
                 void clearSourceSets(@Path("testSuites.main.sources") NamedDomainObjectCollection<LanguageSourceSet> sourceSets) {
@@ -251,4 +265,110 @@ class TestSuiteModelIntegrationSpec extends AbstractIntegrationSpec {
         then:
         failureHasCause("This collection does not support element removal.")
     }
+
+    def "test suite binaries container elements and their tasks containers are visible in model report"() {
+        given:
+        withTestBinaryFactory()
+        buildFile << '''
+            model {
+                testSuites {
+                    main {
+                        binaries {
+                            first(CustomTestBinary)
+                            second(CustomTestBinary)
+                        }
+                    }
+                }
+            }
+        '''
+
+        when:
+        run "model"
+
+        then:
+        ModelReportOutput.from(output).hasNodeStructure {
+            testSuites {
+                main {
+                    binaries {
+                        first {
+                            tasks(nodeValue: "[]")
+                        }
+                        second {
+                            tasks(nodeValue: "[]")
+                        }
+
+                    }
+                    sources {
+
+                    }
+                }
+            }
+        }
+    }
+
+    def "can reference binaries container for a test suite in a rule"() {
+        given:
+        withTestBinaryFactory()
+        buildFile << '''
+            model {
+                testSuites {
+                    main {
+                        binaries {
+                            first(CustomTestBinary)
+                            second(CustomTestBinary)
+                        }
+                    }
+                }
+                tasks {
+                    create("printBinaryNames") {
+                        def binaries = $("testSuites.main.binaries")
+                        doLast {
+                            println "names: ${binaries.values().name}"
+                        }
+                    }
+                }
+            }
+        '''
+
+        when:
+        succeeds "printBinaryNames"
+
+        then:
+        output.contains "names: [first, second]"
+    }
+
+    def "can reference binaries container elements using specialized type in a rule"() {
+        given:
+        withTestBinaryFactory()
+        buildFile << '''
+            model {
+                testSuites {
+                    main {
+                        binaries {
+                            main(CustomTestBinary)
+                        }
+                    }
+                }
+            }
+            class TaskRules extends RuleSource {
+                @Mutate
+                void addPrintSourceDisplayNameTask(ModelMap<Task> tasks, @Path("testSuites.main.binaries.main") CustomTestBinary binary) {
+                    tasks.create("printBinaryData") {
+                        doLast {
+                            println "binary data: ${binary.data}"
+                        }
+                    }
+                }
+            }
+
+            apply type: TaskRules
+        '''
+
+        when:
+        succeeds "printBinaryData"
+
+        then:
+        output.contains "binary data: foo"
+    }
+
 }

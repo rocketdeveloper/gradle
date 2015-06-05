@@ -25,7 +25,7 @@ import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.TextUtil
 
 class RoutesCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
-    def destinationDirPath = "build/playBinary/src/routesCompileRoutesSourcesPlayBinary"
+    def destinationDirPath = "build/playBinary/src/compilePlayBinaryRoutes"
     def destinationDir = file(destinationDirPath)
 
     def setup() {
@@ -57,38 +57,15 @@ repositories{
         given:
         withRoutesTemplate()
         expect:
-        succeeds("routesCompileRoutesSourcesPlayBinary")
+        succeeds("compilePlayBinaryRoutes")
         and:
         destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
     }
 
-    def "runs compiler multiple times"(){
-        when:
-        withRoutesTemplate()
-        then:
-        succeeds("routesCompileRoutesSourcesPlayBinary")
-        and:
-        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
-
-        withRoutesTemplate("foo")
-        and:
-        succeeds("routesCompileRoutesSourcesPlayBinary")
-        then:
-        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala",
-                "controllers/foo/routes.java", "foo/routes_reverseRouting.scala", "foo/routes_routing.scala")
-
-        when:
-        file("conf/foo.routes").delete()
-        then:
-        succeeds("routesCompileRoutesSourcesPlayBinary")
-        and:
-        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
-    }
-
-    def "removes stale output files in incremental compile"(){
+    def "recompiles on changed routes file input"() {
         given:
         TestFile templateFile = withRoutesTemplate()
-        succeeds("routesCompileRoutesSourcesPlayBinary")
+        succeeds("compilePlayBinaryRoutes")
 
         and:
         destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
@@ -97,14 +74,47 @@ repositories{
         def routingFirstCompileSnapshot = file(destinationDirPath, "routes_routing.scala").snapshot();
 
         when:
-        templateFile.delete()
+        templateFile << "\n\n"
+        and:
+        succeeds "compilePlayBinaryRoutes"
 
         then:
-        succeeds("routesCompileRoutesSourcesPlayBinary")
+        executedAndNotSkipped ":compilePlayBinaryRoutes"
+
         and:
-        file(destinationDirPath, "controllers/routes.java").assertHasNotChangedSince(routesFirstCompileSnapshot);
-        file(destinationDirPath, "routes_reverseRouting.scala").assertHasNotChangedSince(revRoutingFirstCompileSnapshot);
-        file(destinationDirPath, "routes_routing.scala").assertHasNotChangedSince(routingFirstCompileSnapshot);
+        file(destinationDirPath, "controllers/routes.java").assertHasChangedSince(routesFirstCompileSnapshot)
+        file(destinationDirPath, "routes_reverseRouting.scala").assertHasChangedSince(revRoutingFirstCompileSnapshot);
+        file(destinationDirPath, "routes_routing.scala").assertHasChangedSince(routingFirstCompileSnapshot);
+
+        when:
+        succeeds "compilePlayBinaryRoutes"
+
+        then:
+        skipped ":compilePlayBinaryRoutes"
+    }
+
+    def "compiles additional routes file and cleans up output on removal"(){
+        when:
+        withRoutesTemplate()
+        then:
+        succeeds("compilePlayBinaryRoutes")
+        and:
+        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
+
+        when:
+        withRoutesTemplate("foo")
+        and:
+        succeeds("compilePlayBinaryRoutes")
+        then:
+        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala",
+                "controllers/foo/routes.java", "foo/routes_reverseRouting.scala", "foo/routes_routing.scala")
+
+        when:
+        file("conf/foo.routes").delete()
+        then:
+        succeeds("compilePlayBinaryRoutes")
+        and:
+        destinationDir.assertHasDescendants("controllers/routes.java", "routes_reverseRouting.scala", "routes_routing.scala")
     }
 
     def "compiles multiple Routes source sets as part of play application build" () {
@@ -118,9 +128,9 @@ repositories{
 
         then:
         executedAndNotSkipped(
-                ":routesCompileRoutesSourcesPlayBinary",
-                ":routesCompileExtraRoutesPlayBinary",
-                ":routesCompileOtherRoutesPlayBinary"
+                ":compilePlayBinaryRoutes",
+                ":compilePlayBinaryExtraRoutes",
+                ":compilePlayBinaryOtherRoutes"
         )
 
         and:
@@ -146,23 +156,23 @@ Play Application 'play'
 -----------------------
 
 Source sets
-    Routes source 'play:extraRoutes'
-        extraRoutes
     Java source 'play:java'
-        app
+        srcDir: app
         includes: **/*.java
-    Routes source 'play:otherRoutes'
-        otherRoutes
     JVM resources 'play:resources'
-        conf
-    Routes source 'play:routesSources'
-        conf
+        srcDir: conf
+    Routes source 'play:extraRoutes'
+        srcDir: extraRoutes
+    Routes source 'play:otherRoutes'
+        srcDir: otherRoutes
+    Routes source 'play:routes'
+        srcDir: conf
         includes: routes, *.routes
     Scala source 'play:scala'
-        app
+        srcDir: app
         includes: **/*.scala
     Twirl template source 'play:twirlTemplates'
-        app
+        srcDir: app
         includes: **/*.html
 
 Binaries
@@ -170,7 +180,7 @@ Binaries
     }
 
     def destinationDir(String sourceSetName) {
-        return file("build/playBinary/src/routesCompile${StringUtils.capitalize(sourceSetName)}PlayBinary")
+        return file("build/playBinary/src/compilePlayBinary${StringUtils.capitalize(sourceSetName)}")
     }
 
     def withRoutesSource(TestFile routesFile, String packageId) {

@@ -17,8 +17,12 @@
 package org.gradle.model.internal.registry;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
-import com.google.common.collect.*;
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
 import org.gradle.api.Nullable;
 import org.gradle.model.internal.core.*;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
@@ -26,7 +30,10 @@ import org.gradle.model.internal.type.ModelType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Set;
 
 abstract class ModelNodeInternal implements MutableModelNode {
 
@@ -40,11 +47,11 @@ abstract class ModelNodeInternal implements MutableModelNode {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelNodeInternal.class);
 
     private CreatorRuleBinder creatorBinder;
-    private ListMultimap<ModelActionRole, MutatorRuleBinder<?>> mutators;
     private final Set<ModelNodeInternal> dependencies = Sets.newHashSet();
     private final Set<ModelNodeInternal> dependents = Sets.newHashSet();
     private ModelNode.State state = ModelNode.State.Known;
     private boolean hidden;
+    private List<ModelRuleDescriptor> executedRules = Lists.newArrayList();
 
     public ModelNodeInternal(CreatorRuleBinder creatorBinder) {
         this.creatorBinder = creatorBinder;
@@ -91,64 +98,8 @@ abstract class ModelNodeInternal implements MutableModelNode {
         return creatorBinder.getCreator().isEphemeral();
     }
 
-    public void addMutatorBinder(ModelActionRole role, MutatorRuleBinder<?> mutator) {
-        if (!canApply(role)) {
-            throw new IllegalStateException(String.format(
-                "Cannot add %s rule '%s' for model element '%s' when element is in state %s.",
-                role,
-                mutator.getAction().getDescriptor(),
-                getPath(),
-                getState()
-            ));
-        }
-
-        if (mutators == null) {
-            mutators = createMutatorsMap();
-        }
-
-        mutators.put(role, mutator);
-    }
-
-    private static ListMultimap<ModelActionRole, MutatorRuleBinder<?>> createMutatorsMap() {
-        return Multimaps.newListMultimap(new EnumMap<ModelActionRole, Collection<MutatorRuleBinder<?>>>(ModelActionRole.class), LIST_SUPPLIER);
-    }
-
-    public Iterable<MutatorRuleBinder<?>> getMutatorBinders(ModelActionRole role) {
-        if (mutators == null) {
-            return Collections.emptyList();
-        }
-        final List<MutatorRuleBinder<?>> ruleBinders = mutators.get(role);
-        if (ruleBinders == null) {
-            return Collections.emptyList();
-        } else {
-            return new Iterable<MutatorRuleBinder<?>>() {
-                @Override
-                public Iterator<MutatorRuleBinder<?>> iterator() {
-                    return new Iterator<MutatorRuleBinder<?>>() {
-                        int i;
-
-                        @Override
-                        public void remove() {
-                            throw new UnsupportedOperationException();
-                        }
-
-                        @Override
-                        public boolean hasNext() {
-                            return i < ruleBinders.size();
-                        }
-
-                        @Override
-                        public MutatorRuleBinder<?> next() {
-                            if (hasNext()) {
-                                return ruleBinders.get(i++);
-                            } else {
-                                throw new NoSuchElementException();
-                            }
-                        }
-                    };
-                }
-            };
-        }
+    private static ListMultimap<ModelNode.State, MutatorRuleBinder<?>> createMutatorsMap() {
+        return Multimaps.newListMultimap(new EnumMap<ModelNode.State, Collection<MutatorRuleBinder<?>>>(ModelNode.State.class), LIST_SUPPLIER);
     }
 
     public void notifyFired(RuleBinder binder) {
@@ -158,6 +109,7 @@ abstract class ModelNodeInternal implements MutableModelNode {
             dependencies.add(node);
             node.dependents.add(this);
         }
+        executedRules.add(binder.getDescriptor());
     }
 
     public Iterable<? extends ModelNode> getDependencies() {
@@ -188,8 +140,8 @@ abstract class ModelNodeInternal implements MutableModelNode {
         return state.mutable;
     }
 
-    public boolean canApply(ModelActionRole type) {
-        return type.ordinal() >= state.ordinal() - ModelNode.State.Created.ordinal();
+    public boolean canApply(ModelNode.State targetState) {
+        return state.compareTo(targetState) < 0;
     }
 
     public ModelPromise getPromise() {
@@ -249,5 +201,30 @@ abstract class ModelNodeInternal implements MutableModelNode {
                 child.reset();
             }
         }
+    }
+
+    @Override
+    public Optional<String> getValueDescription() {
+        this.ensureUsable();
+        return this.getAdapter().getValueDescription(this);
+    }
+
+    @Override
+    public Optional<String> getTypeDescription() {
+        this.ensureUsable();
+        ModelView<?> modelView = getAdapter().asReadOnly(ModelType.untyped(), this, null);
+        if (modelView != null) {
+            ModelType<?> type = modelView.getType();
+            if (type != null) {
+                return Optional.of(type.toString());
+            }
+            modelView.close();
+        }
+        return Optional.absent();
+    }
+
+    @Override
+    public List<ModelRuleDescriptor> getExecutedRules() {
+        return this.executedRules;
     }
 }

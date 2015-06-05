@@ -16,6 +16,7 @@
 
 package org.gradle.language.base
 
+import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.EnableModelDsl
 import org.gradle.util.TextUtil
@@ -23,9 +24,9 @@ import spock.lang.Unroll
 
 class ComponentModelIntegrationTest extends AbstractIntegrationSpec {
 
+
     def "setup"() {
         EnableModelDsl.enable(executer)
-
         buildScript """
             interface CustomComponent extends ComponentSpec {}
             class DefaultCustomComponent extends BaseComponentSpec implements CustomComponent {}
@@ -88,8 +89,6 @@ class ComponentModelIntegrationTest extends AbstractIntegrationSpec {
 
     void withBinaries() {
         buildFile << """
-            import org.gradle.model.collection.*
-
             interface CustomBinary extends BinarySpec {
                 String getData();
             }
@@ -231,11 +230,14 @@ model {
         succeeds "model"
 
         then:
-        output.contains(TextUtil.toPlatformLineSeparators("""
-    components
-        main
-            binaries
-            sources"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries()
+                    sources()
+                }
+            }
+        }
     }
 
     def "can reference sources container for a component in a rule"() {
@@ -247,7 +249,7 @@ model {
                     create("printSourceNames") {
                         def sources = $("components.main.sources")
                         doLast {
-                            println "names: ${sources*.name}"
+                            println "names: ${sources.values()*.name}"
                         }
                     }
                 }
@@ -290,21 +292,29 @@ model {
         succeeds "model"
 
         then:
-        output.contains(TextUtil.toPlatformLineSeparators("""
-    components
-        foo
-            binaries
-            sources
-                bar
-        main
-            binaries
-            sources
-                main
-                test
-        test
-            binaries
-            sources
-                test"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                foo {
+                    binaries()
+                    sources {
+                        bar(nodeValue: "DefaultCustomLanguageSourceSet 'foo:bar'")
+                    }
+                }
+                main {
+                    binaries()
+                    sources {
+                        main()
+                        test()
+                    }
+                }
+                test {
+                    binaries()
+                    sources {
+                        test()
+                    }
+                }
+            }
+        }
     }
 
     def "can reference sources container elements in a rule"() {
@@ -334,8 +344,6 @@ model {
         given:
         withMainSourceSet()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class TaskRules extends RuleSource {
                 @Mutate
                 void addPrintSourceDisplayNameTask(ModelMap<Task> tasks, @Path("components.main.sources.main") CustomLanguageSourceSet sourceSet) {
@@ -361,8 +369,6 @@ model {
         given:
         withMainSourceSet()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class SourceSetRemovalRules extends RuleSource {
                 @Mutate
                 void clearSourceSets(@Path("components.main.sources") NamedDomainObjectCollection<LanguageSourceSet> sourceSets) {
@@ -399,15 +405,18 @@ model {
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""    components
-        main
-            binaries
-            sources
-        someCustomComponent
-            binaries
-            sources
-"""))
-
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries()
+                    sources()
+                }
+                someCustomComponent {
+                    binaries()
+                    sources()
+                }
+            }
+        }
     }
 
     def "plugin can configure component with given name"() {
@@ -432,12 +441,18 @@ model {
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""    components
-        main
-            binaries
-            sources
-                bar
-                main"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries()
+                    sources {
+                        bar()
+                        main()
+                    }
+                }
+            }
+
+        }
     }
 
     def "plugin can apply component beforeEach / afterEach"() {
@@ -490,13 +505,17 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""    components
-        main
-            binaries
-            sources
-                bar
-                main"""))
-
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries()
+                    sources {
+                        bar()
+                        main()
+                    }
+                }
+            }
+        }
     }
 
     def "buildscript can create component"() {
@@ -512,9 +531,12 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""someCustomComponent
-            binaries
-            sources"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            someCustomComponent {
+                binaries()
+                sources()
+            }
+        }
 
     }
 
@@ -539,17 +561,21 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""    components
-        main
-            binaries
-            sources
-                bar
-                main
-        test
-            binaries
-            sources
-"""))
-
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries()
+                    sources {
+                        bar()
+                        main()
+                    }
+                }
+                test {
+                    binaries()
+                    sources()
+                }
+            }
+        }
     }
 
     def "buildscript can apply component beforeEach / afterEach"() {
@@ -601,13 +627,15 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "model"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""    components
-        main
-            binaries
-            sources
-                bar
-                main"""))
-
+        ModelReportOutput.from(output).hasNodeStructure {
+            main {
+                binaries()
+                sources {
+                    bar(nodeValue: "DefaultCustomLanguageSourceSet 'main:bar'")
+                    main(nodeValue: "DefaultCustomLanguageSourceSet 'main:main'")
+                }
+            }
+        }
     }
 
     def "reasonable error message when creating component with default implementation"() {
@@ -650,8 +678,6 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         given:
         withMainSourceSet()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class ComponentSpecContainerRules extends RuleSource {
                 @Mutate
                 void addComponents(ComponentSpecContainer componentSpecs) {
@@ -685,8 +711,6 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         given:
         withMainSourceSet()
         buildFile << """
-            import org.gradle.model.collection.*
-
             class ComponentSpecContainerRules extends RuleSource {
 
                 @Mutate
@@ -703,7 +727,7 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         when:
         fails "tasks"
         then:
-        failureHasCause "Cannot add Mutate rule 'ComponentSpecContainerRules#addComponentTasks(org.gradle.api.tasks.TaskContainer, $fullQualified) > all()' for model element 'components.main'"
+        failureHasCause "Attempt to mutate closed view of model of type '$fullQualified' given to rule 'ComponentSpecContainerRules#addComponentTasks(org.gradle.api.tasks.TaskContainer, $fullQualified)'"
 
         where:
         projectionType                     | fullQualified
@@ -720,22 +744,32 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "model"
 
         then:
-        output.contains(TextUtil.toPlatformLineSeparators("""
-    components
-        main
-            binaries
-                main
-                    tasks
-                test
-                    tasks
-            sources
-        test
-            binaries
-                main
-                    tasks
-                test
-                    tasks
-            sources"""))
+        ModelReportOutput.from(output).hasNodeStructure {
+            components {
+                main {
+                    binaries {
+                        main {
+                            tasks()
+                        }
+                        test {
+                            tasks()
+                        }
+                    }
+                    sources()
+                }
+                test {
+                    binaries {
+                        main {
+                            tasks()
+                        }
+                        test {
+                            tasks()
+                        }
+                    }
+                    sources()
+                }
+            }
+        }
     }
 
     def "can reference binaries container for a component in a rule"() {
@@ -747,7 +781,7 @@ afterEach DefaultCustomComponent 'newComponent'"""))
                     create("printBinaryNames") {
                         def binaries = $("components.main.binaries")
                         doLast {
-                            println "names: ${binaries*.name}"
+                            println "names: ${binaries.keySet().toList()}"
                         }
                     }
                 }
@@ -765,11 +799,9 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         given:
         withBinaries()
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class TaskRules extends RuleSource {
                 @Mutate
-                void addPrintSourceDisplayNameTask(ModelMap<Task> tasks, @Path("components.main.binaries.main") DefaultCustomBinary binary) {
+                void addPrintSourceDisplayNameTask(ModelMap<Task> tasks, @Path("components.main.binaries.main") CustomBinary binary) {
                     tasks.create("printBinaryData") {
                         doLast {
                             println "binary data: ${binary.data}"
@@ -786,33 +818,6 @@ afterEach DefaultCustomComponent 'newComponent'"""))
 
         then:
         output.contains "binary data: bar"
-    }
-
-    def "cannot remove binaries"() {
-        given:
-        withBinaries()
-        buildFile << '''
-            import org.gradle.model.collection.*
-
-            class BinariesRemovalRules extends RuleSource {
-                @Mutate
-                void clearSourceSets(@Path("components.main.binaries") NamedDomainObjectCollection<BinarySpec> binaries) {
-                    binaries.clear()
-                }
-
-                @Mutate
-                void closeMainComponentBinariesForTasks(ModelMap<Task> tasks, @Path("components.main.binaries") NamedDomainObjectCollection<BinarySpec> binaries) {
-                }
-            }
-
-            apply type: BinariesRemovalRules
-        '''
-
-        when:
-        fails()
-
-        then:
-        failureHasCause("This collection does not support element removal.")
     }
 
     def "can reference task container of a binary in a rule"() {
@@ -842,8 +847,6 @@ afterEach DefaultCustomComponent 'newComponent'"""))
     def "can view components container as a model map and as a collection builder"() {
         given:
         buildFile << '''
-            import org.gradle.model.collection.*
-
             class ComponentsRules extends RuleSource {
                 @Mutate
                 void addViaCollectionBuilder(@Path("components") CollectionBuilder<ComponentSpec> components) {

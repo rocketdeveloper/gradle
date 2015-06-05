@@ -16,6 +16,7 @@
 
 package org.gradle.model.internal.registry;
 
+import com.google.common.collect.Iterables;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.SetMultimap;
@@ -25,12 +26,12 @@ import org.gradle.model.internal.core.ModelPath;
 
 import java.util.*;
 
-public class ModelGraph {
+class ModelGraph {
     private final ModelNodeInternal root;
     private final Map<ModelPath, ModelNodeInternal> flattened = Maps.newTreeMap();
     private final SetMultimap<ModelPath, ModelCreationListener> pathListeners = LinkedHashMultimap.create();
     private final SetMultimap<ModelPath, ModelCreationListener> parentListeners = LinkedHashMultimap.create();
-    private final SetMultimap<ModelPath, ModelCreationListener> scopeListeners = LinkedHashMultimap.create();
+    private final SetMultimap<ModelPath, ModelCreationListener> ancestorListeners = LinkedHashMultimap.create();
     private final Set<ModelCreationListener> listeners = new LinkedHashSet<ModelCreationListener>();
     private boolean notifying;
     private final List<ModelCreationListener> pendingListeners = new ArrayList<ModelCreationListener>();
@@ -65,9 +66,10 @@ public class ModelGraph {
         try {
             notifyListeners(node, pathListeners.get(node.getPath()));
             notifyListeners(node, parentListeners.get(node.getPath().getParent()));
-            notifyListeners(node, scopeListeners.get(node.getPath()));
-            notifyListeners(node, scopeListeners.get(node.getPath().getParent()));
             notifyListeners(node, listeners);
+            for (ModelPath path = node.getPath().getParent(); path != null; path = path.getParent()) {
+                notifyListeners(node, ancestorListeners.get(path));
+            }
         } finally {
             notifying = false;
         }
@@ -97,51 +99,71 @@ public class ModelGraph {
         notifying = true;
         try {
             if (listener.getPath() != null) {
-                ModelNodeInternal node = flattened.get(listener.getPath());
-                if (node != null) {
-                    if (maybeNotify(node, listener)) {
-                        return;
-                    }
-                }
-                pathListeners.put(listener.getPath(), listener);
+                addPathListener(listener);
                 return;
             }
             if (listener.getParent() != null) {
-                ModelNodeInternal parent = flattened.get(listener.getParent());
-                if (parent != null) {
-                    for (ModelNodeInternal node : parent.getLinks()) {
-                        if (maybeNotify(node, listener)) {
-                            return;
-                        }
-                    }
-                }
-                parentListeners.put(listener.getParent(), listener);
+                addParentListener(listener);
                 return;
             }
-            if (listener.getScope() != null) {
-                ModelNodeInternal scope = flattened.get(listener.getScope());
-                if (scope != null) {
-                    if (maybeNotify(scope, listener)) {
+            if (listener.getAncestor() != null) {
+                addAncestorListener(listener);
+                return;
+            }
+            addEverythingListener(listener);
+        } finally {
+            notifying = false;
+        }
+    }
+
+    private void addEverythingListener(ModelCreationListener listener) {
+        for (ModelNodeInternal node : flattened.values()) {
+            if (maybeNotify(node, listener)) {
+                return;
+            }
+        }
+        listeners.add(listener);
+    }
+
+    private void addAncestorListener(ModelCreationListener listener) {
+        ModelNodeInternal ancestor = flattened.get(listener.getAncestor());
+        if (ancestor != null) {
+            LinkedList<ModelNodeInternal> queue = new LinkedList<ModelNodeInternal>();
+            queue.add(ancestor);
+            while (!queue.isEmpty()) {
+                ModelNodeInternal parent = queue.removeFirst();
+                for (ModelNodeInternal node : parent.getLinks()) {
+                    if (maybeNotify(node, listener)) {
                         return;
                     }
-                    for (ModelNodeInternal node : scope.getLinks()) {
-                        if (maybeNotify(node, listener)) {
-                            return;
-                        }
-                    }
+                    queue.addFirst(node);
                 }
-                scopeListeners.put(listener.getScope(), listener);
-                return;
             }
-            for (ModelNodeInternal node : flattened.values()) {
+        }
+        ancestorListeners.put(listener.getAncestor(), listener);
+    }
+
+    private void addParentListener(ModelCreationListener listener) {
+        ModelNodeInternal parent = flattened.get(listener.getParent());
+        if (parent != null) {
+            for (ModelNodeInternal node : parent.getLinks()) {
                 if (maybeNotify(node, listener)) {
                     return;
                 }
             }
-            listeners.add(listener);
-        } finally {
-            notifying = false;
         }
+        parentListeners.put(listener.getParent(), listener);
+    }
+
+    private void addPathListener(ModelCreationListener listener) {
+        ModelNodeInternal node = flattened.get(listener.getPath());
+        if (node != null) {
+            if (maybeNotify(node, listener)) {
+                return;
+            }
+        }
+        pathListeners.put(listener.getPath(), listener);
+        return;
     }
 
     private void flush() {
@@ -172,6 +194,14 @@ public class ModelGraph {
         }
 
         return found;
+    }
+
+    public Iterable<ModelNodeInternal> findAllInScope(ModelPath scope) {
+        ModelNodeInternal node = flattened.get(scope);
+        if (node == null) {
+            return Collections.emptyList();
+        }
+        return Iterables.concat(Collections.singleton(node), node.getLinks());
     }
 
     @Nullable

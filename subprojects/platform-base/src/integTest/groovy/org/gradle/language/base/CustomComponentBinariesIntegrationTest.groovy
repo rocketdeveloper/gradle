@@ -19,6 +19,7 @@ package org.gradle.language.base
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.model.ModelMap
 import org.gradle.model.collection.CollectionBuilder
+import spock.lang.Ignore
 import spock.lang.Unroll
 
 import static org.gradle.util.TextUtil.toPlatformLineSeparators
@@ -27,13 +28,6 @@ class CustomComponentBinariesIntegrationTest extends AbstractIntegrationSpec {
 
     def "setup"() {
         buildFile << """
-import org.gradle.model.*
-import org.gradle.model.collection.*
-import org.gradle.api.internal.file.FileResolver
-import org.gradle.internal.reflect.Instantiator
-import javax.inject.Inject
-import org.gradle.internal.service.ServiceRegistry
-
 interface SampleBinary extends BinarySpec {}
 interface OtherSampleBinary extends SampleBinary {}
 
@@ -59,14 +53,12 @@ class DefaultSampleLibrary extends BaseComponentSpec implements SampleLibrary {}
             }
 
             @Mutate
-            void createSampleComponentComponents(ModelMap<SampleLibrary> componentSpecs, ServiceRegistry serviceRegistry) {
-                componentSpecs.create("sampleLib", new Action<SampleLibrary>() {
-                    public void execute(SampleLibrary library) {
-                        library.sources {
-                            librarySource(LibrarySourceSet)
-                        }
+            void createSampleComponentComponents(ModelMap<SampleLibrary> componentSpecs) {
+                componentSpecs.create("sampleLib") {
+                    sources {
+                        librarySource(LibrarySourceSet)
                     }
-                });
+                }
             }
 
             @BinaryType
@@ -127,7 +119,7 @@ class DefaultSampleLibrary extends BaseComponentSpec implements SampleLibrary {}
 
 Source sets
     DefaultLibrarySourceSet 'sampleLib:librarySource'
-        src${File.separator}sampleLib${File.separator}librarySource
+        srcDir: src${File.separator}sampleLib${File.separator}librarySource
 
 Binaries
     DefaultSampleBinary 'sampleLibBinary'
@@ -142,12 +134,12 @@ Binaries
         buildFile << withSimpleComponentBinaries()
         buildFile << """
         task checkSourceSets << {
-            def sampleBinary = project.binaries.sampleLibBinary
-            def othersSampleBinary = project.binaries.sampleLibOtherBinary
-            assert sampleBinary.source[0] instanceof DefaultLibrarySourceSet
-            assert sampleBinary.source[0].displayName == "DefaultLibrarySourceSet 'sampleLib:librarySource'"
-            assert othersSampleBinary.source[0] instanceof DefaultLibrarySourceSet
-            assert othersSampleBinary.source[0].displayName == "DefaultLibrarySourceSet 'sampleLib:librarySource'"
+            def sampleBinarySourceSet = project.binaries.sampleLibBinary.source.toList()[0]
+            def othersSampleBinarySourceSet = project.binaries.sampleLibOtherBinary.source.toList()[0]
+            assert sampleBinarySourceSet instanceof DefaultLibrarySourceSet
+            assert sampleBinarySourceSet.displayName == "DefaultLibrarySourceSet 'sampleLib:librarySource'"
+            assert othersSampleBinarySourceSet instanceof DefaultLibrarySourceSet
+            assert othersSampleBinarySourceSet.displayName == "DefaultLibrarySourceSet 'sampleLib:librarySource'"
         }
 """
         then:
@@ -202,7 +194,6 @@ Binaries
                void createBinariesForSampleLibrary(ModelMap<SampleBinary> binaries, $ruleInputs) {
                    myModel.values.each{ value ->
                         binaries.create("\${library.name}\${value}Binary")
-
                    }
                }
            }
@@ -226,7 +217,7 @@ DefaultSampleLibrary 'sampleLib'
 
 Source sets
     DefaultLibrarySourceSet 'sampleLib:librarySource'
-        src${File.separator}sampleLib${File.separator}librarySource
+        srcDir: src${File.separator}sampleLib${File.separator}librarySource
 
 Binaries
     DefaultSampleBinary 'sampleLib1stBinary'
@@ -253,5 +244,61 @@ Binaries
          }
         apply plugin: MyComponentBinariesPlugin
 """
+    }
+
+    def "subject of @ComponentBinaries rule is Groovy decorated"() {
+        buildFile << """
+            class GroovyComponentBinariesRules extends RuleSource {
+                @ComponentBinaries
+                void createBinariesForSampleLibrary(ModelMap<SampleBinary> binaries, SampleLibrary library) {
+                    binaries.derivedFromMethodName(SampleBinary) {}
+                }
+            }
+
+            apply type: GroovyComponentBinariesRules
+        """
+
+        when:
+        succeeds "components"
+
+        then:
+        output.contains(toPlatformLineSeparators("""
+Binaries
+    DefaultSampleBinary 'derivedFromMethodName'
+        build using task: :derivedFromMethodName
+"""))
+    }
+
+    @Ignore("Not supported due to BinaryTasks rules now operating directly on component.binaries, which is not managed - LD - 15/5/15")
+    def "attempt to mutate the subject of a @ComponentBinaries after the method has finished results in an error"() {
+        buildFile << """
+            class BinariesHolder {
+                ModelMap<SampleBinary> binaries
+            }
+            class IllegallyMutatingComponentBinariesRules extends RuleSource {
+                @Model
+                BinariesHolder holder() {
+                    return new BinariesHolder()
+                }
+
+                @ComponentBinaries
+                void createBinariesForSampleLibrary(ModelMap<SampleBinary> binaries, SampleLibrary library, BinariesHolder holder) {
+                    holder.binaries = binaries
+                }
+
+                @Mutate
+                void mutateBinariesOutsideOfComponentBinariesRule(ModelMap<Task> task, BinariesHolder holder) {
+                    holder.binaries.create("illegal", SampleBinary)
+                }
+            }
+
+            apply type: IllegallyMutatingComponentBinariesRules
+        """
+
+        when:
+        fails "tasks"
+
+        then:
+        failure.assertHasCause("Attempt to mutate closed view of model of type '${ModelMap.name}<SampleBinary>' given to rule 'IllegallyMutatingComponentBinariesRules#createBinariesForSampleLibrary(org.gradle.model.ModelMap<SampleBinary>, SampleLibrary, BinariesHolder)'")
     }
 }

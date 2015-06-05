@@ -19,13 +19,16 @@ package org.gradle.tooling.internal.provider;
 import org.gradle.cache.CacheRepository;
 import org.gradle.initialization.GradleLauncherFactory;
 import org.gradle.internal.classloader.ClassLoaderFactory;
+import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.filewatch.FileWatcherFactory;
 import org.gradle.internal.invocation.BuildActionRunner;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.scopes.PluginServiceRegistry;
-import org.gradle.launcher.continuous.BlockingTriggerable;
+import org.gradle.internal.session.BuildSession;
 import org.gradle.launcher.exec.*;
+import org.gradle.logging.StyledTextOutputFactory;
 
 import java.util.List;
 
@@ -45,15 +48,10 @@ public class LauncherServices implements PluginServiceRegistry {
     }
 
     static class ToolingGlobalScopeServices {
-        BuildActionExecuter<BuildActionParameters> createBuildActionExecuter(GradleLauncherFactory gradleLauncherFactory, ServiceRegistry services) {
+        BuildExecuter createBuildExecuter(GradleLauncherFactory gradleLauncherFactory, ServiceRegistry services, ListenerManager listenerManager, FileWatcherFactory fileWatcherFactory, ExecutorFactory executorFactory, StyledTextOutputFactory styledTextOutputFactory, BuildSession buildSession) {
             List<BuildActionRunner> buildActionRunners = services.getAll(BuildActionRunner.class);
-
-            ListenerManager listenerManager = services.get(ListenerManager.class);
-
-            BlockingTriggerable blockingTriggerable = new BlockingTriggerable();
-            listenerManager.addListener(blockingTriggerable);
-
-            return new ContinuousModeBuildActionExecuter(new InProcessBuildActionExecuter(gradleLauncherFactory, new ChainingBuildActionRunner(buildActionRunners)), blockingTriggerable, services);
+            BuildActionExecuter<BuildActionParameters> delegate = new InProcessBuildActionExecuter(gradleLauncherFactory, new ChainingBuildActionRunner(buildActionRunners));
+            return new ContinuousBuildActionExecuter(delegate, fileWatcherFactory, listenerManager, styledTextOutputFactory, executorFactory, buildSession);
         }
 
         ExecuteBuildActionRunner createExecuteBuildActionRunner() {
@@ -67,22 +65,23 @@ public class LauncherServices implements PluginServiceRegistry {
         JarCache createJarCache() {
             return new JarCache();
         }
+
     }
 
     static class ToolingBuildScopeServices {
         PayloadClassLoaderFactory createClassLoaderFactory(ClassLoaderFactory classLoaderFactory, JarCache jarCache, CacheRepository cacheRepository) {
             return new DaemonSidePayloadClassLoaderFactory(
-                    new ModelClassLoaderFactory(
-                            classLoaderFactory),
-                    jarCache,
-                    cacheRepository);
+                new ModelClassLoaderFactory(
+                    classLoaderFactory),
+                jarCache,
+                cacheRepository);
         }
 
         PayloadSerializer createPayloadSerializer(ClassLoaderCache classLoaderCache, PayloadClassLoaderFactory classLoaderFactory) {
             return new PayloadSerializer(
-                    new DefaultPayloadClassLoaderRegistry(
-                            classLoaderCache,
-                            classLoaderFactory)
+                new DefaultPayloadClassLoaderRegistry(
+                    classLoaderCache,
+                    classLoaderFactory)
             );
         }
     }

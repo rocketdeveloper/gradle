@@ -16,17 +16,14 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
-import org.gradle.tooling.events.ProgressEventType;
-import org.gradle.tooling.events.build.BuildProgressListener;
-import org.gradle.tooling.events.task.TaskProgressListener;
-import org.gradle.tooling.events.test.TestProgressListener;
+import org.gradle.tooling.events.OperationType;
 import org.gradle.tooling.model.Launchable;
 import org.gradle.tooling.model.Task;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * A {@code BuildLauncher} allows you to configure and execute a Gradle build.
@@ -82,18 +79,21 @@ public interface BuildLauncher extends LongRunningOperation {
      * {@inheritDoc}
      * @since 1.0
      */
+    @Override
     BuildLauncher withArguments(String ... arguments);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-3
      */
+    @Override
     BuildLauncher setStandardOutput(OutputStream outputStream);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-3
      */
+    @Override
     BuildLauncher setStandardError(OutputStream outputStream);
 
     /**
@@ -101,59 +101,53 @@ public interface BuildLauncher extends LongRunningOperation {
      * @since 2.3
      */
     @Incubating
+    @Override
     BuildLauncher setColorOutput(boolean colorOutput);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-7
      */
+    @Override
     BuildLauncher setStandardInput(InputStream inputStream);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-8
      */
+    @Override
     BuildLauncher setJavaHome(File javaHome);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-9
      */
+    @Override
     BuildLauncher setJvmArguments(String... jvmArguments);
 
     /**
      * {@inheritDoc}
      * @since 1.0-milestone-3
      */
+    @Override
     BuildLauncher addProgressListener(ProgressListener listener);
 
     /**
      * {@inheritDoc}
+     *
      * @since 2.5
      */
     @Incubating
-    BuildLauncher addProgressListener(org.gradle.tooling.events.ProgressListener listener, EnumSet<ProgressEventType> eventTypes);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.4
-     */
-    @Incubating
-    BuildLauncher addTestProgressListener(TestProgressListener listener);
+    @Override
+    BuildLauncher addProgressListener(org.gradle.tooling.events.ProgressListener listener);
 
     /**
      * {@inheritDoc}
      * @since 2.5
      */
     @Incubating
-    BuildLauncher addTaskProgressListener(TaskProgressListener listener);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.5
-     */
-    @Incubating
-    BuildLauncher addBuildProgressListener(BuildProgressListener listener);
+    @Override
+    BuildLauncher addProgressListener(org.gradle.tooling.events.ProgressListener listener, Set<OperationType> eventTypes);
 
     /**
      * {@inheritDoc}
@@ -161,6 +155,7 @@ public interface BuildLauncher extends LongRunningOperation {
      * @since 2.3
      */
     @Incubating
+    @Override
     BuildLauncher withCancellationToken(CancellationToken cancellationToken);
 
     /**

@@ -17,15 +17,13 @@ package org.gradle.internal.service.scopes;
 
 import org.gradle.StartParameter;
 import org.gradle.api.execution.TaskActionListener;
+import org.gradle.api.execution.internal.TaskInputsListener;
 import org.gradle.api.internal.changedetection.TaskArtifactStateRepository;
 import org.gradle.api.internal.changedetection.changes.DefaultTaskArtifactStateRepository;
 import org.gradle.api.internal.changedetection.changes.ShortCircuitTaskArtifactStateRepository;
 import org.gradle.api.internal.changedetection.state.*;
 import org.gradle.api.internal.hash.DefaultHasher;
-import org.gradle.api.internal.tasks.DefaultTaskFileSystemInputsAccumulator;
-import org.gradle.api.internal.tasks.NoopTaskFileSystemInputsAccumulator;
 import org.gradle.api.internal.tasks.TaskExecuter;
-import org.gradle.api.internal.tasks.TaskFileSystemInputsAccumulator;
 import org.gradle.api.internal.tasks.execution.*;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.cache.CacheRepository;
@@ -44,24 +42,32 @@ import org.gradle.internal.serialize.SerializerRegistry;
 
 public class TaskExecutionServices {
 
-    TaskFileSystemInputsAccumulator createTaskFileSystemInputsAccumulator(StartParameter startParameter) {
-        return startParameter.isContinuousModeEnabled()
-            ? new DefaultTaskFileSystemInputsAccumulator()
-            : new NoopTaskFileSystemInputsAccumulator();
-    }
+    TaskExecuter createTaskExecuter(TaskArtifactStateRepository repository, ListenerManager listenerManager, Gradle gradle) {
+        // TODO - need a more comprehensible way to only collect inputs for the outer build
+        //      - we are trying to ignore buildSrc here, but also avoid weirdness with use of GradleBuild tasks
+        boolean isOuterBuild = gradle.getParent() == null;
+        TaskInputsListener taskInputsListener = isOuterBuild
+            ? listenerManager.getBroadcaster(TaskInputsListener.class)
+            : TaskInputsListener.NOOP;
 
-    TaskExecuter createTaskExecuter(TaskArtifactStateRepository repository, ListenerManager listenerManager, TaskFileSystemInputsAccumulator taskFileSystemInputsAccumulator) {
         return new ExecuteAtMostOnceTaskExecuter(
             new SkipOnlyIfTaskExecuter(
                 new SkipTaskWithNoActionsExecuter(
                     new SkipEmptySourceFilesTaskExecuter(
-                        new FileSystemInputsAccumulatingTaskExecuter(taskFileSystemInputsAccumulator,
-                            new ValidatingTaskExecuter(
-                                new SkipUpToDateTaskExecuter(repository,
-                                    new PostExecutionAnalysisTaskExecuter(
-                                        new ExecuteActionsTaskExecuter(
-                                            listenerManager.getBroadcaster(TaskActionListener.class)
-                                        )))))))));
+                        taskInputsListener,
+                        new ValidatingTaskExecuter(
+                            new SkipUpToDateTaskExecuter(repository,
+                                new PostExecutionAnalysisTaskExecuter(
+                                    new ExecuteActionsTaskExecuter(
+                                        listenerManager.getBroadcaster(TaskActionListener.class)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        );
     }
 
     TaskArtifactStateCacheAccess createCacheAccess(Gradle gradle, CacheRepository cacheRepository, InMemoryTaskArtifactCache inMemoryTaskArtifactCache, GradleBuildEnvironment environment) {

@@ -17,6 +17,7 @@ package org.gradle.nativeplatform
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.app.CppHelloWorldApp
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
@@ -25,6 +26,7 @@ import spock.lang.IgnoreIf
 import spock.lang.Issue
 import spock.lang.Unroll
 
+@LeaksFileHandles
 class BinaryConfigurationIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def "can configure the binaries of a C++ application"() {
         given:
@@ -158,66 +160,6 @@ model {
         then:
         staticLibrary("build/binaries/helloStaticLibrary/hello").assertExists()
         installation("build/install/mainExecutable").exec().out == "Hello!"
-    }
-
-    def "can configure a binary to use additional source sets"() {
-        given:
-        buildFile << """
-apply plugin: "cpp"
-
-model {
-    components { comp ->
-        util(NativeLibrarySpec) {
-            sources {
-                cpp {
-                    exportedHeaders.srcDir "src/shared/headers"
-                }
-            }
-        }
-        main(NativeExecutableSpec) {
-            sources {
-                cpp {
-                    exportedHeaders.srcDir "src/shared/headers"
-                }
-            }
-            binaries.all {
-                source comp.util.sources.cpp
-            }
-        }
-    }
-}
-"""
-        settingsFile << "rootProject.name = 'test'"
-
-        and:
-        file("src/shared/headers/greeting.h") << """
-            void greeting();
-"""
-
-        file("src/util/cpp/greeting.cpp") << """
-            #include <iostream>
-            #include "greeting.h"
-
-            void greeting() {
-                std::cout << "Hello!";
-            }
-        """
-
-        file("src/main/cpp/helloworld.cpp") << """
-            #include "greeting.h"
-
-            int main() {
-                greeting();
-                return 0;
-            }
-        """
-
-        when:
-        run "mainExecutable"
-
-        then:
-        def executable = executable("build/binaries/mainExecutable/main")
-        executable.exec().out == "Hello!"
     }
 
     def "can customize binaries before and after linking"() {

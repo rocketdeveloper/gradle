@@ -16,10 +16,19 @@
 
 package org.gradle.platform.base.internal.registry;
 
-import org.gradle.internal.reflect.Instantiator;
+import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
+import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectRegistry;
+import org.gradle.api.internal.resolve.DefaultProjectLocator;
+import org.gradle.api.internal.resolve.ProjectLocator;
+import org.gradle.deployment.internal.DefaultDeploymentRegistry;
+import org.gradle.deployment.internal.DeploymentRegistry;
+import org.gradle.internal.component.model.BinarySpecToArtifactConverterRegistry;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.session.BuildSession;
+import org.gradle.language.base.internal.resolve.LanguageSourceSetLocalComponentFactory;
 import org.gradle.model.internal.inspect.MethodModelRuleExtractor;
 import org.gradle.platform.base.Platform;
 import org.gradle.platform.base.internal.toolchain.DefaultToolResolver;
@@ -33,6 +42,7 @@ public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry 
     }
 
     public void registerBuildServices(ServiceRegistration registration){
+        registration.addProvider(new BuildScopeServices());
     }
 
     public void registerGradleServices(ServiceRegistration registration) {
@@ -53,17 +63,40 @@ public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry 
         }
     }
 
+    private static class BuildScopeServices {
+        LanguageSourceSetLocalComponentFactory createLocalComponentFactory() {
+            return new LanguageSourceSetLocalComponentFactory();
+        }
+
+        ProjectLocator createProjectLocator(ProjectFinder finder) {
+            return new DefaultProjectLocator(finder);
+        }
+
+        ProjectFinder createProjectFinder(final ProjectRegistry<ProjectInternal> projectRegistry) {
+            return new ProjectFinder() {
+                @Override
+                public ProjectInternal getProject(String path) {
+                    return projectRegistry.getProject(path);
+                }
+            };
+        }
+
+        BinarySpecToArtifactConverterRegistry createBinaryToArtifactRegistry(ServiceRegistry serviceRegistry) {
+            return new BinarySpecToArtifactConverterRegistry(serviceRegistry);
+        }
+    }
+
     private static class GlobalScopeServices {
         MethodModelRuleExtractor createLanguageTypePluginInspector() {
             return new LanguageTypeModelRuleExtractor();
         }
 
-        MethodModelRuleExtractor createComponentModelPluginInspector(Instantiator instantiator) {
-            return new ComponentTypeModelRuleExtractor(instantiator);
+        MethodModelRuleExtractor createComponentModelPluginInspector() {
+            return new ComponentTypeModelRuleExtractor();
         }
 
-        MethodModelRuleExtractor createBinaryTypeModelPluginInspector(Instantiator instantiator) {
-            return new BinaryTypeModelRuleExtractor(instantiator);
+        MethodModelRuleExtractor createBinaryTypeModelPluginInspector() {
+            return new BinaryTypeModelRuleExtractor();
         }
 
         MethodModelRuleExtractor createComponentBinariesPluginInspector() {
@@ -71,6 +104,10 @@ public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry 
         }
         MethodModelRuleExtractor createBinaryTaskPluginInspector() {
             return new BinaryTasksModelRuleExtractor();
+        }
+
+        DeploymentRegistry createDeploymentRegistry(BuildSession buildSession) {
+            return new DefaultDeploymentRegistry(buildSession);
         }
     }
 }

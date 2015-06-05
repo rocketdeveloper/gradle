@@ -22,6 +22,7 @@ import org.gradle.language.base.LanguageSourceSet
 import org.gradle.language.base.ProjectSourceSet
 import org.gradle.language.base.internal.DefaultFunctionalSourceSet
 import org.gradle.language.nativeplatform.DependentSourceSet
+import org.gradle.model.internal.fixture.ModelRegistryHelper
 import org.gradle.nativeplatform.*
 import org.gradle.nativeplatform.internal.configure.TestNativeBinariesFactory
 import org.gradle.nativeplatform.internal.resolve.NativeBinaryResolveResult
@@ -31,7 +32,7 @@ import org.gradle.nativeplatform.platform.internal.Architectures
 import org.gradle.nativeplatform.tasks.ObjectFilesToBinary
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider
-import org.gradle.platform.base.component.BaseComponentSpec
+import org.gradle.platform.base.component.BaseComponentFixtures
 import org.gradle.platform.base.internal.DefaultBinaryNamingScheme
 import org.gradle.platform.base.internal.DefaultBinaryTasksCollection
 import org.gradle.platform.base.internal.DefaultComponentSpecIdentifier
@@ -42,7 +43,7 @@ class NativeBinarySpecTest extends Specification {
     def flavor1 = new DefaultFlavor("flavor1")
     def id = new DefaultComponentSpecIdentifier("project", "name")
     def sourceSet = new DefaultFunctionalSourceSet("testFunctionalSourceSet", instantiator, Stub(ProjectSourceSet))
-    def component = BaseComponentSpec.create(TestNativeComponentSpec, id, sourceSet, instantiator)
+    def component = BaseComponentFixtures.create(TestNativeComponentSpec, new ModelRegistryHelper(), id, sourceSet, instantiator)
 
     def toolChain1 = Stub(NativeToolChainInternal) {
         getName() >> "ToolChain1"
@@ -83,7 +84,7 @@ class NativeBinarySpecTest extends Specification {
         functionalSourceSet.add(sourceSet2)
 
         and:
-        binary.source functionalSourceSet
+        binary.binarySources = functionalSourceSet
 
         then:
         binary.source.contains(sourceSet1)
@@ -118,7 +119,7 @@ class NativeBinarySpecTest extends Specification {
         def sourceSet = Stub(DependentSourceSet) {
             getLibs() >> [lib]
         }
-        binary.source sourceSet
+        binary.source.add sourceSet
 
         1 * resolver.resolve({ NativeBinaryResolveResult result ->
             result.allResolutions*.input == [lib]
@@ -169,7 +170,7 @@ class NativeBinarySpecTest extends Specification {
         def sourceSet = Stub(DependentSourceSet) {
             getLibs() >> [sourceLib]
         }
-        binary.source sourceSet
+        binary.source.add sourceSet
         binary.lib(lib2)
 
         and:

@@ -18,43 +18,37 @@ package org.gradle.model.internal.registry;
 
 import org.gradle.api.Action;
 import org.gradle.model.internal.core.ModelAction;
-import org.gradle.model.internal.core.ModelActionRole;
-import org.gradle.model.internal.core.ModelReference;
 
 import java.util.Collection;
 import java.util.List;
 
-public class MutatorRuleBinder<T> extends RuleBinder {
-
+class MutatorRuleBinder<T> extends RuleBinder {
     private ModelBinding subjectBinding;
-    private final ModelReference<T> subjectReference;
-    private final ModelActionRole role;
     private final ModelAction<T> action;
 
-    public MutatorRuleBinder(ModelReference<T> subjectReference, List<ModelReference<?>> inputs, final ModelActionRole role, ModelAction<T> action, Collection<RuleBinder> binders) {
-        super(inputs, action.getDescriptor(), binders);
-        this.subjectReference = subjectReference;
-        subjectBinding = binding(subjectReference, true, new Action<ModelNodeInternal>() {
+    public MutatorRuleBinder(final BindingPredicate subjectReference, List<BindingPredicate> inputs, ModelAction<T> action, Collection<RuleBinder> binders) {
+        super(subjectReference, inputs, action.getDescriptor(), binders);
+        subjectBinding = binding(subjectReference, true, new Action<ModelBinding>() {
             @Override
-            public void execute(ModelNodeInternal subject) {
-                subject.addMutatorBinder(role, MutatorRuleBinder.this);
+            public void execute(ModelBinding modelBinding) {
+                ModelNodeInternal node = modelBinding.getNode();
+                BindingPredicate predicate = modelBinding.getPredicate();
+                if (predicate.getState() != null && node.getState().compareTo(predicate.getState()) >= 0) {
+                    throw new IllegalStateException(String.format("Cannot add rule %s for model element '%s' at state %s as this element is already at state %s.",
+                        modelBinding.referrer,
+                        node.getPath(),
+                        predicate.getState().previous(),
+                        node.getState()
+                    ));
+                }
                 maybeFire();
             }
         });
-        this.role = role;
         this.action = action;
-    }
-
-    public ModelActionRole getRole() {
-        return role;
     }
 
     public ModelAction<T> getAction() {
         return action;
-    }
-
-    public ModelReference<T> getSubjectReference() {
-        return subjectReference;
     }
 
     public ModelBinding getSubjectBinding() {

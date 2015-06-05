@@ -79,7 +79,9 @@ class DefaultBuildLauncher extends AbstractLongRunningOperation<DefaultBuildLaun
             }
 
             public Void run(ConsumerConnection connection) {
-                return connection.run(Void.class, operationParameters);
+                Void sink = connection.run(Void.class, operationParameters);
+                operationParameters.getBuildProgressListener().rethrowErrors();
+                return sink;
             }
         }, new ResultHandlerAdapter(handler));
     }

@@ -16,14 +16,12 @@
 
 package org.gradle.play.plugins
 
-import com.sun.xml.internal.ws.util.StringUtils
 import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.gradle.util.TextUtil
 import org.junit.Rule
-import spock.lang.Unroll
 
 class PlayApplicationPluginIntegrationTest extends AbstractIntegrationSpec {
 
@@ -58,18 +56,18 @@ Play Application 'play'
 
 Source sets
     Java source 'play:java'
-        app
+        srcDir: app
         includes: **/*.java
     JVM resources 'play:resources'
-        conf
-    Routes source 'play:routesSources'
-        conf
+        srcDir: conf
+    Routes source 'play:routes'
+        srcDir: conf
         includes: routes, *.routes
     Scala source 'play:scala'
-        app
+        srcDir: app
         includes: **/*.scala
     Twirl template source 'play:twirlTemplates'
-        app
+        srcDir: app
         includes: **/*.html
 
 Binaries
@@ -105,25 +103,27 @@ Binaries
                 ":createPlayBinaryAssetsJar",
                 ":playBinary",
                 ":assemble")
-        skipped(":routesCompileRoutesSourcesPlayBinary",
-                ":twirlCompileTwirlTemplatesPlayBinary",
-                ":scalaCompilePlayBinary")
+        skipped(":compilePlayBinaryRoutes",
+                ":compilePlayBinaryTwirlTemplates",
+                ":compilePlayBinaryScala")
 
         and:
         jar("build/playBinary/lib/play-app.jar").hasDescendants()
         jar("build/playBinary/lib/play-app-assets.jar").hasDescendants()
     }
 
-    @Unroll
-    def "can declare additional #languageName sourceSets"() {
+    def "can declare additional scala and java sourceSets"() {
         given:
         buildFile << """
         model {
             components {
                 play {
                     sources {
-                        extra($sourceSetType) {
-                            source.srcDir "src/extra"
+                        extraJava(JavaSourceSet) {
+                            source.srcDir "src/extraJava"
+                        }
+                        extraScala(ScalaLanguageSourceSet) {
+                            source.srcDir "src/extraScala"
                         }
                     }
                 }
@@ -131,10 +131,13 @@ Binaries
         }
 """
         and:
-        file("src/extra/org/acme/model/Person.${languageName}") << """
+        file("src/extraJava/org/acme/model/JavaPerson.java") << """
             package org.acme.model;
-            class Person {
-            }
+            class JavaPerson {}
+"""
+        file("src/extraScala/org/acme/model/ScalaPerson.scala") << """
+            package org.acme.model;
+            class ScalaPerson {}
 """
 
         when:
@@ -142,25 +145,12 @@ Binaries
 
         then:
         output.contains(TextUtil.toPlatformLineSeparators("""
-Play Application 'play'
------------------------
-
-Source sets
-    ${StringUtils.capitalize(languageName)} source 'play:extra'
-        src${File.separator}extra
-    Java source 'play:java'
-        app
-        includes: **/*.java
-    JVM resources 'play:resources'
-        conf
-    Routes source 'play:routesSources'
-        conf
-        includes: routes, *.routes
-    Scala source 'play:scala'
-        app
-        includes: **/*.scala
-    Twirl template source 'play:twirlTemplates'
-        app
+    Java source 'play:extraJava'
+        srcDir: src${File.separator}extraJava
+"""))
+        output.contains(TextUtil.toPlatformLineSeparators("""
+    Scala source 'play:extraScala'
+        srcDir: src${File.separator}extraScala
 """))
 
         when:
@@ -168,23 +158,17 @@ Source sets
 
         then:
         executedAndNotSkipped(
+                ":compilePlayBinaryScala",
                 ":createPlayBinaryJar",
                 ":createPlayBinaryAssetsJar",
-                ":scalaCompilePlayBinary",
                 ":playBinary",
                 ":assemble")
-        skipped(":routesCompileRoutesSourcesPlayBinary",
-                ":twirlCompileTwirlTemplatesPlayBinary")
+        skipped(":compilePlayBinaryRoutes",
+                ":compilePlayBinaryTwirlTemplates")
 
         and:
-        jar("build/playBinary/lib/play-app.jar").hasDescendants("org/acme/model/Person.class")
+        jar("build/playBinary/lib/play-app.jar").hasDescendants("org/acme/model/JavaPerson.class", "org/acme/model/ScalaPerson.class")
         jar("build/playBinary/lib/play-app-assets.jar").hasDescendants()
-
-        where:
-
-        languageName | sourceSetType
-        "scala"      | "ScalaLanguageSourceSet"
-        "java"       | "JavaSourceSet"
     }
 
     JarTestFixture jar(String fileName) {

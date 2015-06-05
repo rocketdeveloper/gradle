@@ -17,7 +17,6 @@
 package org.gradle.model.internal.registry;
 
 import org.gradle.model.internal.core.ModelPromise;
-import org.gradle.model.internal.core.ModelReference;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 
 /**
@@ -25,24 +24,24 @@ import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
  * <p>
  * A binding represents the knowledge that the model element referenced by the reference is known and can project a view of the reference type.
  */
-abstract class ModelBinding extends ModelCreationListener {
+abstract class ModelBinding {
 
-    final ModelReference<?> reference;
+    final BindingPredicate predicate;
     final ModelRuleDescriptor referrer;
     final boolean writable;
     protected ModelNodeInternal boundTo;
 
-    protected ModelBinding(ModelRuleDescriptor referrer, ModelReference<?> reference, boolean writable) {
-        this.reference = reference;
+    protected ModelBinding(ModelRuleDescriptor referrer, BindingPredicate predicate, boolean writable) {
+        this.predicate = predicate;
         this.referrer = referrer;
         this.writable = writable;
     }
 
-    public ModelReference<?> getReference() {
-        return reference;
+    public BindingPredicate getPredicate() {
+        return predicate;
     }
 
-    public  boolean isBound() {
+    public boolean isBound() {
         return boundTo != null;
     }
 
@@ -54,12 +53,19 @@ abstract class ModelBinding extends ModelCreationListener {
     }
 
     boolean isTypeCompatible(ModelPromise promise) {
-        return promise.canBeViewedAsWritable(reference.getType()) || promise.canBeViewedAsReadOnly(reference.getType());
+        return promise.canBeViewedAsWritable(predicate.getType()) || promise.canBeViewedAsReadOnly(predicate.getType());
     }
 
     @Override
     public String toString() {
-        return "ModelBinding{reference=" + reference + ", node=" + boundTo + '}';
+        return "ModelBinding{predicate=" + predicate + ", node=" + boundTo + '}';
     }
 
+    public abstract void onCreate(ModelNodeInternal node);
+
+    public void onRemove(ModelNodeInternal node) {
+        if (node == boundTo) {
+            boundTo = null;
+        }
+    }
 }

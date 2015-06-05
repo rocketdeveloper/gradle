@@ -18,12 +18,14 @@ package org.gradle.nativeplatform.internal.resolve
 import org.gradle.api.UnknownDomainObjectException
 import org.gradle.api.UnknownProjectException
 import org.gradle.api.internal.DefaultDomainObjectSet
-import org.gradle.api.internal.DefaultNamedDomainObjectSet
 import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.model.internal.core.DefaultModelMap
+import org.gradle.api.internal.resolve.ProjectLocator
+import org.gradle.language.base.internal.resolve.LibraryResolveException
+import org.gradle.model.ModelMap
 import org.gradle.model.internal.core.ModelPath
 import org.gradle.model.internal.registry.ModelRegistry
 import org.gradle.model.internal.type.ModelType
+import org.gradle.model.internal.type.ModelTypes
 import org.gradle.nativeplatform.NativeBinarySpec
 import org.gradle.nativeplatform.NativeLibraryBinary
 import org.gradle.nativeplatform.NativeLibraryRequirement
@@ -39,15 +41,15 @@ class ProjectLibraryBinaryLocatorTest extends Specification {
     def requirement = Mock(NativeLibraryRequirement)
     def library = Mock(NativeLibrarySpec)
     def binary = Mock(MockNativeLibraryBinary)
-    def binaries = Mock(DefaultNamedDomainObjectSet)
-    def nativeBinaries = Mock(DefaultNamedDomainObjectSet)
+    def binaries = Mock(ModelMap)
+    def nativeBinaries = Mock(ModelMap)
     def convertedBinaries = new DefaultDomainObjectSet(NativeLibraryBinary, [binary])
     def locator = new ProjectLibraryBinaryLocator(projectLocator)
 
     def setup() {
         library.binaries >> binaries
         binaries.withType(NativeBinarySpec) >> nativeBinaries
-        nativeBinaries.iterator() >> [binary].iterator()
+        nativeBinaries.values() >> [binary]
     }
 
     def "locates binaries for library in same project"() {
@@ -123,7 +125,7 @@ class ProjectLibraryBinaryLocatorTest extends Specification {
         and:
         projectLocator.locateProject("other") >> project
         project.modelRegistry >> modelRegistry
-        modelRegistry.find(ModelPath.path("components"), DefaultModelMap.modelMapTypeOf(NativeLibrarySpec)) >> null
+        modelRegistry.find(ModelPath.path("components"), ModelTypes.modelMap(NativeLibrarySpec)) >> null
         project.path >> "project-path"
 
         and:

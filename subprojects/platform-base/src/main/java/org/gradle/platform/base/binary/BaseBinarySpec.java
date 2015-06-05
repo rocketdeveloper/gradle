@@ -16,23 +16,28 @@
 
 package org.gradle.platform.base.binary;
 
+import com.google.common.collect.Sets;
 import org.gradle.api.Action;
 import org.gradle.api.DomainObjectSet;
 import org.gradle.api.Incubating;
-import org.gradle.api.PolymorphicDomainObjectContainer;
 import org.gradle.api.internal.AbstractBuildableModelElement;
+import org.gradle.api.internal.DefaultDomainObjectSet;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.reflect.ObjectInstantiationException;
 import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.LanguageSourceSet;
-import org.gradle.language.base.internal.LanguageSourceSetContainer;
+import org.gradle.model.ModelMap;
+import org.gradle.model.internal.core.ModelMapGroovyDecorator;
+import org.gradle.model.internal.core.NamedDomainObjectSetBackedModelMap;
 import org.gradle.platform.base.BinaryTasksCollection;
 import org.gradle.platform.base.ModelInstantiationException;
 import org.gradle.platform.base.internal.BinaryBuildAbility;
 import org.gradle.platform.base.internal.BinarySpecInternal;
-import org.gradle.platform.base.internal.FixedBuildAbility;
 import org.gradle.platform.base.internal.DefaultBinaryTasksCollection;
+import org.gradle.platform.base.internal.FixedBuildAbility;
+
+import java.util.Set;
 
 /**
  * Base class for custom binary implementations.
@@ -44,7 +49,7 @@ import org.gradle.platform.base.internal.DefaultBinaryTasksCollection;
  */
 @Incubating
 public abstract class BaseBinarySpec extends AbstractBuildableModelElement implements BinarySpecInternal {
-    private final LanguageSourceSetContainer sourceSets = new LanguageSourceSetContainer();
+    private FunctionalSourceSet mainSources;
 
     private static ThreadLocal<BinaryInfo> nextBinaryInfo = new ThreadLocal<BinaryInfo>();
     private final BinaryTasksCollection tasks;
@@ -104,25 +109,24 @@ public abstract class BaseBinarySpec extends AbstractBuildableModelElement imple
         return getBuildAbility().isBuildable();
     }
 
-    public FunctionalSourceSet getBinarySources() {
-        return sourceSets.getMainSources();
-    }
-
     public void setBinarySources(FunctionalSourceSet sources) {
-        sourceSets.setMainSources(sources);
+        mainSources = sources;
     }
 
+    @Override
     public DomainObjectSet<LanguageSourceSet> getSource() {
-        return sourceSets.getSources();
+        return new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet.class, mainSources);
     }
 
-    public void sources(Action<? super PolymorphicDomainObjectContainer<LanguageSourceSet>> action) {
-        action.execute(sourceSets.getMainSources());
+    public void sources(Action<? super ModelMap<LanguageSourceSet>> action) {
+        action.execute(ModelMapGroovyDecorator.unmanaged(
+            NamedDomainObjectSetBackedModelMap.wrap(LanguageSourceSet.class, mainSources)
+        ));
     }
 
-    // TODO:DAZ Remove this
-    public void source(Object source) {
-        sourceSets.source(source);
+    @Override
+    public Set<LanguageSourceSet> getAllSources() {
+        return Sets.newLinkedHashSet(mainSources);
     }
 
     public BinaryTasksCollection getTasks() {

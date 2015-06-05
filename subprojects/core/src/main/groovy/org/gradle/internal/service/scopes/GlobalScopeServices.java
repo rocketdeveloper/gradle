@@ -53,6 +53,8 @@ import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.ServiceLocator;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.internal.session.BuildSession;
+import org.gradle.internal.session.DefaultBuildSession;
 import org.gradle.messaging.remote.MessagingServer;
 import org.gradle.messaging.remote.internal.MessagingServices;
 import org.gradle.messaging.remote.internal.inet.InetAddressFactory;
@@ -109,9 +111,9 @@ public class GlobalScopeServices {
 
     ClassPathRegistry createClassPathRegistry(ModuleRegistry moduleRegistry, PluginModuleRegistry pluginModuleRegistry) {
         return new DefaultClassPathRegistry(
-                new DefaultClassPathProvider(moduleRegistry),
-                new DynamicModulesClassPathProvider(moduleRegistry,
-                        pluginModuleRegistry));
+            new DefaultClassPathProvider(moduleRegistry),
+            new DynamicModulesClassPathProvider(moduleRegistry,
+                pluginModuleRegistry));
     }
 
     DefaultModuleRegistry createModuleRegistry() {
@@ -164,9 +166,9 @@ public class GlobalScopeServices {
 
     FileLockManager createFileLockManager(ProcessEnvironment processEnvironment, FileLockContentionHandler fileLockContentionHandler) {
         return new DefaultFileLockManager(
-                new DefaultProcessMetaDataProvider(
-                        processEnvironment),
-                fileLockContentionHandler);
+            new DefaultProcessMetaDataProvider(
+                processEnvironment),
+            fileLockContentionHandler);
     }
 
     InMemoryTaskArtifactCache createInMemoryTaskArtifactCache() {
@@ -175,8 +177,8 @@ public class GlobalScopeServices {
 
     DefaultFileLockContentionHandler createFileLockContentionHandler(ExecutorFactory executorFactory, MessagingServices messagingServices) {
         return new DefaultFileLockContentionHandler(
-                executorFactory,
-                messagingServices.get(InetAddressFactory.class)
+            executorFactory,
+            messagingServices.get(InetAddressFactory.class)
         );
     }
 
@@ -234,5 +236,9 @@ public class GlobalScopeServices {
 
     FileWatcherFactory createFileWatcherFactory(ExecutorFactory executorFactory) {
         return new DefaultFileWatcherFactory(executorFactory);
+    }
+
+    BuildSession createBuildSession() {
+        return new DefaultBuildSession();
     }
 }

@@ -66,23 +66,25 @@ class WatchServiceRegistrar implements FileWatcherListener {
         Iterable<? extends File> startingWatchPoints = FileUtils.calculateRoots(enclosingDirsThatExist);
 
         for (File dir : startingWatchPoints) {
-            maybeWatchDirRecurse(dir);
-        }
-    }
-
-    private void maybeWatchDirRecurse(File dir) throws IOException {
-        if (dir.isDirectory()) {
             Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
                 @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (inUnfilteredSubsetOrAncestorOfAnyRoot(dir.toFile())) {
-                        dir.register(watchService, WATCH_KINDS, WATCH_MODIFIERS);
+                public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {
+                    if (inUnfilteredSubsetOrAncestorOfAnyRoot(path.toFile())) {
+                        watchDir(path);
                         return FileVisitResult.CONTINUE;
                     } else {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                 }
             });
+        }
+    }
+
+    private void watchDir(Path dir) throws IOException {
+        try {
+            dir.register(watchService, WATCH_KINDS, WATCH_MODIFIERS);
+        } catch (NoSuchFileException ignore) {
+            // directory may have been deleted
         }
     }
 
@@ -109,17 +111,43 @@ class WatchServiceRegistrar implements FileWatcherListener {
         }
 
         File file = event.getFile();
-        if (fileSystemSubset.contains(file)) {
-            delegate.onChange(watcher, event);
-        }
+        maybeFire(watcher, event);
 
         if (watcher.isRunning() && file.isDirectory() && event.getType().equals(FileWatcherEvent.Type.CREATE)) {
             try {
-                maybeWatchDirRecurse(file);
+                newDirectory(watcher, file);
             } catch (IOException e) {
                 throw UncheckedException.throwAsUncheckedException(e);
             }
         }
     }
 
+    private void maybeFire(FileWatcher watcher, FileWatcherEvent event) {
+        if (fileSystemSubset.contains(event.getFile())) {
+            delegate.onChange(watcher, event);
+        }
+    }
+
+    private void newDirectory(FileWatcher watcher, File dir) throws IOException {
+        if (!watcher.isRunning()) {
+            return;
+        }
+        if (dir.exists()) {
+            watchDir(dir.toPath());
+            File[] contents = dir.listFiles();
+            if (contents != null) {
+                for (File file : contents) {
+                    maybeFire(watcher, FileWatcherEvent.create(file));
+                    if (!watcher.isRunning()) {
+                        return;
+                    }
+
+                    if (file.isDirectory()) {
+                        newDirectory(watcher, file);
+                    }
+                }
+            }
+        }
+    }
 }
+

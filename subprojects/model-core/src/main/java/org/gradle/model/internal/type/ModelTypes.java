@@ -16,13 +16,20 @@
 
 package org.gradle.model.internal.type;
 
-import java.util.Collection;
+import org.gradle.model.ModelMap;
 
 public abstract class ModelTypes {
 
-    public static <T> ModelType<Collection<T>> collectionOf(Class<T> type) {
-        return new ModelType.Builder<Collection<T>>() {
-        }.where(new ModelType.Parameter<T>() {
-        }, ModelType.of(type)).build();
+    public static <I> ModelType<ModelMap<I>> modelMap(Class<I> type) {
+        return modelMap(ModelType.of(type));
     }
+
+    public static <I> ModelType<ModelMap<I>> modelMap(ModelType<I> type) {
+        return new ModelType.Builder<ModelMap<I>>() {
+        }.where(
+            new ModelType.Parameter<I>() {
+            }, type
+        ).build();
+    }
+
 }

@@ -17,7 +17,6 @@
 package org.gradle.play.internal.run;
 
 import org.gradle.internal.UncheckedException;
-import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.scala.internal.reflect.ScalaMethod;
 import org.gradle.scala.internal.reflect.ScalaReflectionUtil;
 
@@ -31,9 +30,11 @@ import java.lang.reflect.Proxy;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarFile;
 
 public abstract class DefaultVersionedPlayRunAdapter implements VersionedPlayRunAdapter, Serializable {
+    private final AtomicReference<Object> reloadObject = new AtomicReference<Object>();
 
     protected abstract Class<?> getBuildLinkClass(ClassLoader classLoader) throws ClassNotFoundException;
 
@@ -41,20 +42,20 @@ public abstract class DefaultVersionedPlayRunAdapter implements VersionedPlayRun
 
     protected abstract Class<?> getBuildDocHandlerClass(ClassLoader docsClassLoader) throws ClassNotFoundException;
 
-    public Object getBuildLink(ClassLoader classLoader, final File projectPath, final Iterable<File> classpath) throws ClassNotFoundException {
+    public Object getBuildLink(final ClassLoader classLoader, final File projectPath, final File applicationJar, final File assetsJar) throws ClassNotFoundException {
+        forceReloadNextTime();
         return Proxy.newProxyInstance(classLoader, new Class<?>[]{getBuildLinkClass(classLoader)}, new InvocationHandler() {
-            private volatile boolean shouldReloadNextTime = true;
-
             public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
                 if (method.getName().equals("projectPath")) {
                     return projectPath;
                 } else if (method.getName().equals("reload")) {
-                    if (shouldReloadNextTime) {
-                        shouldReloadNextTime = false; //reload only once for now
-                        DefaultClassPath projectClasspath = new DefaultClassPath(classpath);
-                        return new URLClassLoader(projectClasspath.getAsURLs().toArray(new URL[]{}), Thread.currentThread().getContextClassLoader());
-                    } else {
+                    Object result = reloadObject.getAndSet(null);
+                    if (result == null) {
                         return null;
+                    } else if (result == Boolean.TRUE) {
+                        return new URLClassLoader(new URL[]{applicationJar.toURI().toURL(), assetsJar.toURI().toURL()}, classLoader);
+                    } else {
+                        throw new IllegalStateException();
                     }
                 } else if (method.getName().equals("settings")) {
                     return new HashMap<String, String>();
@@ -63,6 +64,11 @@ public abstract class DefaultVersionedPlayRunAdapter implements VersionedPlayRun
                 return null;
             }
         });
+    }
+
+    @Override
+    public void forceReloadNextTime() {
+        reloadObject.set(Boolean.TRUE);
     }
 
     public Object getBuildDocHandler(ClassLoader docsClassLoader, Iterable<File> classpath) throws NoSuchMethodException, ClassNotFoundException, IOException, IllegalAccessException {
@@ -92,5 +98,4 @@ public abstract class DefaultVersionedPlayRunAdapter implements VersionedPlayRun
     public ScalaMethod getNettyServerDevHttpMethod(ClassLoader classLoader, ClassLoader docsClassLoader) throws ClassNotFoundException {
         return ScalaReflectionUtil.scalaMethod(classLoader, "play.core.server.NettyServer", "mainDevHttpMode", getBuildLinkClass(classLoader), getBuildDocHandlerClass(docsClassLoader), int.class);
     }
-
 }

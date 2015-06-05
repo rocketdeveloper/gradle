@@ -16,21 +16,20 @@
 
 package org.gradle.play.tasks;
 
+import org.gradle.api.GradleException;
 import org.gradle.api.Incubating;
 import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.ConventionTask;
-import org.gradle.api.internal.file.collections.SimpleFileCollection;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.compile.BaseForkOptions;
+import org.gradle.deployment.internal.DeploymentRegistry;
 import org.gradle.logging.ProgressLogger;
 import org.gradle.logging.ProgressLoggerFactory;
-import org.gradle.platform.base.internal.toolchain.ResolvedTool;
 import org.gradle.play.internal.run.DefaultPlayRunSpec;
-import org.gradle.play.internal.run.PlayApplicationRunner;
-import org.gradle.play.internal.run.PlayApplicationRunnerToken;
+import org.gradle.play.internal.run.PlayApplicationDeploymentHandle;
 import org.gradle.play.internal.run.PlayRunSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,8 +57,9 @@ public class PlayRun extends ConventionTask {
 
     private BaseForkOptions forkOptions;
 
-    private PlayApplicationRunnerToken runnerToken;
-    private ResolvedTool<PlayApplicationRunner> playApplicationRunnerTool;
+    private DeploymentRegistry deploymentRegistry;
+
+    private String deploymentId;
 
     /**
      * fork options for the running a play application.
@@ -73,23 +73,27 @@ public class PlayRun extends ConventionTask {
 
     @TaskAction
     public void run() {
+        PlayApplicationDeploymentHandle deploymentHandle = deploymentRegistry.get(PlayApplicationDeploymentHandle.class, deploymentId);
+        if (deploymentHandle == null) {
+            throw new GradleException("There are no deployment handles registered with id '".concat(deploymentId).concat("'"));
+        }
+
         ProgressLoggerFactory progressLoggerFactory = getServices().get(ProgressLoggerFactory.class);
         ProgressLogger progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
                 .start("Start Play server", "Starting Play");
 
         int httpPort = getHttpPort();
-        FileCollection applicationJars = new SimpleFileCollection(applicationJar, assetsJar);
-        applicationJars = applicationJars.plus(runtimeClasspath);
-        PlayRunSpec spec = new DefaultPlayRunSpec(applicationJars, getProject().getProjectDir(), getForkOptions(), httpPort);
+        PlayRunSpec spec = new DefaultPlayRunSpec(runtimeClasspath, applicationJar, assetsJar, getProject().getProjectDir(), getForkOptions(), httpPort);
 
         try {
-            runnerToken = playApplicationRunnerTool.get().start(spec);
+            deploymentHandle.start(spec);
             progressLogger.completed();
             progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
                     .start(String.format("Run Play App at http://localhost:%d/", httpPort),
-                            String.format("Running at http://localhost:%d/ (stop with ctrl+d)", httpPort));
-            waitForCtrlD();
-            runnerToken.stop();
+                            String.format("Running at http://localhost:%d/", httpPort));
+            if (!getProject().getGradle().getStartParameter().isContinuous()) {
+                waitForCtrlD();
+            }
         } finally {
             progressLogger.completed();
         }
@@ -130,7 +134,11 @@ public class PlayRun extends ConventionTask {
         this.runtimeClasspath = runtimeClasspath;
     }
 
-    public void setPlayApplicationRunnerTool(ResolvedTool<PlayApplicationRunner> playApplicationRunnerTool) {
-        this.playApplicationRunnerTool = playApplicationRunnerTool;
+    public void setDeploymentRegistry(DeploymentRegistry deploymentRegistry) {
+        this.deploymentRegistry = deploymentRegistry;
+    }
+
+    public void setDeploymentId(String deploymentId) {
+        this.deploymentId = deploymentId;
     }
 }

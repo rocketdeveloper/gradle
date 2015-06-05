@@ -17,11 +17,23 @@
 package org.gradle.internal.component.external.model;
 
 import org.apache.ivy.core.module.descriptor.Artifact;
+import org.apache.ivy.core.module.descriptor.ExcludeRule;
+import org.gradle.api.artifacts.PublishArtifact;
+import org.gradle.internal.component.local.model.LocalConfigurationMetaData;
+import org.gradle.internal.component.model.DependencyMetaData;
 
 import java.io.File;
 
 public interface BuildableIvyModulePublishMetaData extends IvyModulePublishMetaData {
+    void addConfiguration(LocalConfigurationMetaData configuration);
+
+    void addExcludeRule(ExcludeRule excludeRule);
+
+    void addDependency(DependencyMetaData dependency);
+
     void addArtifact(IvyModuleArtifactPublishMetaData artifact);
 
     void addArtifact(Artifact artifact, File file);
+
+    void addArtifact(String configuration, PublishArtifact publishArtifact);
 }

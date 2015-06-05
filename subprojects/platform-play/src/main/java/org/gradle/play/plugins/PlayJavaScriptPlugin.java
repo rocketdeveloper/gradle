@@ -31,7 +31,6 @@ import org.gradle.model.RuleSource;
 import org.gradle.platform.base.BinaryTasks;
 import org.gradle.platform.base.LanguageType;
 import org.gradle.platform.base.LanguageTypeBuilder;
-import org.gradle.platform.base.internal.ComponentSpecInternal;
 import org.gradle.platform.base.internal.toolchain.ResolvedTool;
 import org.gradle.platform.base.internal.toolchain.ToolResolver;
 import org.gradle.play.PlayApplicationBinarySpec;
@@ -60,10 +59,13 @@ public class PlayJavaScriptPlugin extends RuleSource {
         components.beforeEach(new Action<PlayApplicationSpec>() {
             @Override
             public void execute(PlayApplicationSpec playComponent) {
-                // TODO - should have some way to lookup using internal type
-                JavaScriptSourceSet javaScriptSourceSet = ((ComponentSpecInternal) playComponent).getSources().create("javaScriptAssets", JavaScriptSourceSet.class);
-                javaScriptSourceSet.getSource().srcDir("app/assets");
-                javaScriptSourceSet.getSource().include("**/*.js");
+                playComponent.getSource().create("javaScript", JavaScriptSourceSet.class, new Action<JavaScriptSourceSet>() {
+                    @Override
+                    public void execute(JavaScriptSourceSet javaScriptSourceSet) {
+                        javaScriptSourceSet.getSource().srcDir("app/assets");
+                        javaScriptSourceSet.getSource().include("**/*.js");
+                    }
+                });
             }
         });
     }
@@ -84,7 +86,7 @@ public class PlayJavaScriptPlugin extends RuleSource {
     }
 
     void createJavaScriptMinifyTask(ModelMap
-                                        <Task> tasks, final JavaScriptSourceSet javaScriptSourceSet, final PlayApplicationBinarySpec binary, final ResolvedTool<Compiler<JavaScriptCompileSpec>> compilerTool,  @Path("buildDir") final File buildDir) {
+                                        <Task> tasks, final JavaScriptSourceSet javaScriptSourceSet, final PlayApplicationBinarySpec binary, final ResolvedTool<Compiler<JavaScriptCompileSpec>> compilerTool, @Path("buildDir") final File buildDir) {
         final String minifyTaskName = "minify" + capitalize(binary.getName()) + capitalize(javaScriptSourceSet.getName());
         final File minifyOutputDirectory = new File(buildDir, String.format("%s/src/%s", binary.getName(), minifyTaskName));
         tasks.create(minifyTaskName, JavaScriptMinify.class, new Action<JavaScriptMinify>() {

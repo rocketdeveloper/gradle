@@ -20,16 +20,82 @@ import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
 import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.tooling.ProjectConnection
+import org.gradle.tooling.events.OperationType
 import org.gradle.tooling.events.ProgressEvent
-import org.gradle.tooling.events.ProgressEventType
 import org.gradle.tooling.events.ProgressListener
-import org.gradle.tooling.events.build.BuildProgressEvent
+import org.gradle.tooling.events.internal.DefaultFinishEvent
+import org.gradle.tooling.events.internal.DefaultStartEvent
+import org.gradle.tooling.events.task.TaskFinishEvent
 import org.gradle.tooling.events.task.TaskProgressEvent
+import org.gradle.tooling.events.task.TaskStartEvent
+import org.gradle.tooling.events.test.TestFinishEvent
 import org.gradle.tooling.events.test.TestProgressEvent
+import org.gradle.tooling.events.test.TestStartEvent
+import org.gradle.tooling.model.gradle.BuildInvocations
 
 @ToolingApiVersion(">=2.5")
 @TargetGradleVersion(">=2.5")
 class ProgressCrossVersionSpec extends ToolingApiSpecification {
+
+    def "receive progress events when requesting a model"() {
+        given:
+        goodCode()
+
+        when: "asking for a model and specifying some task(s) to run first"
+        List<ProgressEvent> result = new ArrayList<ProgressEvent>()
+        withConnection {
+            ProjectConnection connection ->
+                connection.model(BuildInvocations).forTasks('assemble').addProgressListener(new ProgressListener() {
+                    @Override
+                    void statusChanged(ProgressEvent event) {
+                        result << event
+                    }
+                }).get()
+        }
+
+        then: "progress events must be forwarded to the attached listeners"
+        result.size() > 0
+    }
+
+    def "receive progress events when launching a build"() {
+        given:
+        goodCode()
+
+        when: "launching a build"
+        List<ProgressEvent> result = new ArrayList<ProgressEvent>()
+        withConnection {
+            ProjectConnection connection ->
+                connection.newBuild().forTasks('assemble').addProgressListener(new ProgressListener() {
+                    @Override
+                    void statusChanged(ProgressEvent event) {
+                        result << event
+                    }
+                }).run()
+        }
+
+        then: "progress events must be forwarded to the attached listeners"
+        result.size() > 0
+    }
+
+    def "receive progress events when running a build action"() {
+        given:
+        goodCode()
+
+        when: "running a build action"
+        List<ProgressEvent> result = new ArrayList<ProgressEvent>()
+        withConnection {
+            ProjectConnection connection ->
+                connection.action(new NullAction()).addProgressListener(new ProgressListener() {
+                    @Override
+                    void statusChanged(ProgressEvent event) {
+                        result << event
+                    }
+                }).run()
+        }
+
+        then: "progress events must be forwarded to the attached listeners"
+        result.size() > 0
+    }
 
     def "register for all progress events at once"() {
         given:
@@ -44,18 +110,18 @@ class ProgressCrossVersionSpec extends ToolingApiSpecification {
                     void statusChanged(ProgressEvent event) {
                         result << event
                     }
-                }, EnumSet.allOf(ProgressEventType)).run()
+                }, EnumSet.allOf(OperationType)).run()
         }
 
         then: "all progress events must be forwarded to the attached listener"
         result.size() > 0
         result.findAll { it instanceof TestProgressEvent }.size() > 0
         result.findAll { it instanceof TaskProgressEvent }.size() > 0
-        result.findAll { it instanceof BuildProgressEvent }.size() > 0
-        result.findIndexOf { it instanceof BuildProgressEvent } < result.findIndexOf { it instanceof TaskProgressEvent }
-        result.findIndexOf { it instanceof TaskProgressEvent } < result.findIndexOf { it instanceof TestProgressEvent }
-        result.findLastIndexOf { it instanceof TaskProgressEvent } > result.findLastIndexOf { it instanceof TestProgressEvent }
-        result.findLastIndexOf { it instanceof BuildProgressEvent } > result.findLastIndexOf { it instanceof TaskProgressEvent }
+        result.findAll { it.class == DefaultStartEvent || it.class == DefaultFinishEvent }.size() > 0
+        result.findIndexOf { it.class == DefaultStartEvent } < result.findIndexOf { it instanceof TaskStartEvent }
+        result.findIndexOf { it instanceof TaskStartEvent } < result.findIndexOf { it instanceof TestStartEvent }
+        result.findLastIndexOf { it instanceof TaskFinishEvent } > result.findLastIndexOf { it instanceof TestFinishEvent }
+        result.findLastIndexOf { it.class == DefaultFinishEvent } > result.findLastIndexOf { it instanceof TaskFinishEvent }
     }
 
     def "register for subset of progress events at once"() {
@@ -71,18 +137,41 @@ class ProgressCrossVersionSpec extends ToolingApiSpecification {
                     void statusChanged(ProgressEvent event) {
                         result << event
                     }
-                }, EnumSet.of(ProgressEventType.TEST)).run()
+                }, EnumSet.of(OperationType.TEST)).run()
         }
 
         then: "only the matching progress events must be forwarded to the attached listener"
         result.size() > 0
         result.findAll { it instanceof TestProgressEvent }.size() > 0
         result.findAll { it instanceof TaskProgressEvent }.isEmpty()
-        result.findAll { it instanceof BuildProgressEvent }.isEmpty()
+        result.findAll { it.class == DefaultStartEvent || it.class == DefaultFinishEvent }.isEmpty()
     }
 
     @ToolingApiVersion(">=2.5")
-    @TargetGradleVersion(">=2.5")
+    @TargetGradleVersion("=2.4")
+    def "register for all progress events when provider version only knows how to send test progress events"() {
+        given:
+        goodCode()
+
+        when: "registering for all progress event types but provider only knows how to send test progress events"
+        List<ProgressEvent> result = new ArrayList<ProgressEvent>()
+        withConnection {
+            ProjectConnection connection ->
+                connection.newBuild().forTasks('test').addProgressListener(new ProgressListener() {
+                    @Override
+                    void statusChanged(ProgressEvent event) {
+                        result << event
+                    }
+                }, EnumSet.allOf(OperationType)).run()
+        }
+
+        then: "only test progress events must be forwarded to the attached listener"
+        result.size() > 0
+        result.findAll { it instanceof TestProgressEvent }.size() > 0
+        result.findAll { it instanceof TaskProgressEvent }.isEmpty()
+        result.findAll { it.class == DefaultStartEvent || it.class == DefaultFinishEvent }.isEmpty()
+    }
+
     def "when listening to all progress events they are all in a hierarchy with a single root node"() {
         given:
         goodCode()
@@ -96,14 +185,14 @@ class ProgressCrossVersionSpec extends ToolingApiSpecification {
                     void statusChanged(ProgressEvent event) {
                         result << event
                     }
-                }, EnumSet.allOf(ProgressEventType.class)).run()
+                }, EnumSet.allOf(OperationType.class)).run()
         }
 
         then: 'all events are in a hierarchy with a single root node'
         !result.isEmpty()
         def rootNodes = result.findAll { it.descriptor.parent == null }
         rootNodes.size() == 2
-        rootNodes.each { assert it instanceof BuildProgressEvent }
+        rootNodes.each { it.class == DefaultStartEvent || it.class == DefaultFinishEvent }
     }
 
     def goodCode() {
@@ -123,5 +212,4 @@ class ProgressCrossVersionSpec extends ToolingApiSpecification {
             }
         """
     }
-
 }

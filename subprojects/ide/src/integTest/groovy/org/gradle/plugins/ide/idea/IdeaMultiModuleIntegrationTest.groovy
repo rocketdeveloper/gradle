@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 package org.gradle.plugins.ide.idea
-
 import org.gradle.integtests.fixtures.TestResources
 import org.gradle.plugins.ide.AbstractIdeIntegrationTest
 import org.junit.Rule
@@ -253,16 +252,19 @@ project(':three') {
 
         //then
         def dependencies = parseIml("master/one/one.iml").dependencies
-        assert dependencies.modules.size() == 1
+        assert dependencies.modules.size() == 2
         dependencies.assertHasModule("COMPILE", "two")
-
-        dependencies = parseIml("master/two/two.iml").dependencies
-        assert dependencies.modules.size() == 1
         dependencies.assertHasModule("COMPILE", "three")
 
-        dependencies = parseIml("master/three/three.iml").dependencies
-        assert dependencies.modules.size() == 1
+        dependencies = parseIml("master/two/two.iml").dependencies
+        assert dependencies.modules.size() == 2
+        dependencies.assertHasModule("COMPILE", "three")
         dependencies.assertHasModule("COMPILE", "one")
+
+        dependencies = parseIml("master/three/three.iml").dependencies
+        assert dependencies.modules.size() == 2
+        dependencies.assertHasModule("COMPILE", "one")
+        dependencies.assertHasModule("COMPILE", "two")
     }
 
     @Test
