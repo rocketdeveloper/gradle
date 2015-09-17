@@ -17,6 +17,11 @@
 package org.gradle.model.internal.type;
 
 import org.gradle.model.ModelMap;
+import org.gradle.model.ModelSet;
+import org.gradle.model.collection.ManagedSet;
+
+import java.util.List;
+import java.util.Set;
 
 public abstract class ModelTypes {
 
@@ -32,4 +37,35 @@ public abstract class ModelTypes {
         ).build();
     }
 
+    public static <I> ModelType<ModelSet<I>> modelSet(ModelType<I> type) {
+        return new ModelType.Builder<ModelSet<I>>() {
+        }.where(
+            new ModelType.Parameter<I>() {
+            }, type
+        ).build();
+    }
+
+    public static <I> ModelType<ManagedSet<I>> managedSet(ModelType<I> type) {
+        return new ModelType.Builder<ManagedSet<I>>() {
+        }.where(
+            new ModelType.Parameter<I>() {
+            }, type
+        ).build();
+    }
+
+    public static <I> ModelType<List<I>> list(ModelType<I> type) {
+        return new ModelType.Builder<List<I>>() {
+        }.where(
+            new ModelType.Parameter<I>() {
+            }, type
+        ).build();
+    }
+
+    public static <I> ModelType<Set<I>> set(ModelType<I> type) {
+        return new ModelType.Builder<Set<I>>() {
+        }.where(
+            new ModelType.Parameter<I>() {
+            }, type
+        ).build();
+    }
 }

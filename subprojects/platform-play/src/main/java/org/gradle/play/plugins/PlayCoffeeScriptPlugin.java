@@ -73,7 +73,7 @@ public class PlayCoffeeScriptPlugin extends RuleSource {
         components.beforeEach(new Action<PlayApplicationSpec>() {
             @Override
             public void execute(PlayApplicationSpec playComponent) {
-                playComponent.getSource().create("coffeeScript", CoffeeScriptSourceSet.class, new Action<CoffeeScriptSourceSet>() {
+                playComponent.getSources().create("coffeeScript", CoffeeScriptSourceSet.class, new Action<CoffeeScriptSourceSet>() {
                     @Override
                     public void execute(CoffeeScriptSourceSet coffeeScriptSourceSet) {
                         coffeeScriptSourceSet.getSource().srcDir("app/assets");
@@ -91,7 +91,7 @@ public class PlayCoffeeScriptPlugin extends RuleSource {
         binaries.all(new Action<PlayApplicationBinarySpec>() {
             @Override
             public void execute(PlayApplicationBinarySpec playApplicationBinarySpec) {
-                for (CoffeeScriptSourceSet coffeeScriptSourceSet : playApplicationBinarySpec.getSource().withType(CoffeeScriptSourceSet.class)) {
+                for (CoffeeScriptSourceSet coffeeScriptSourceSet : playApplicationBinarySpec.getInputs().withType(CoffeeScriptSourceSet.class)) {
                     JavaScriptSourceSet javaScriptSourceSet = BaseLanguageSourceSet.create(DefaultJavaScriptSourceSet.class, String.format("%sJavaScript", coffeeScriptSourceSet.getName()), playApplicationBinarySpec.getName(), fileResolver, instantiator);
                     playApplicationBinarySpec.getGeneratedJavaScript().put(coffeeScriptSourceSet, javaScriptSourceSet);
                 }
@@ -109,12 +109,14 @@ public class PlayCoffeeScriptPlugin extends RuleSource {
             }
         });
 
-        for (final CoffeeScriptSourceSet coffeeScriptSourceSet : binary.getSource().withType(CoffeeScriptSourceSet.class)) {
+        for (final CoffeeScriptSourceSet coffeeScriptSourceSet : binary.getInputs().withType(CoffeeScriptSourceSet.class)) {
             if (((LanguageSourceSetInternal) coffeeScriptSourceSet).getMayHaveSources()) {
                 final String compileTaskName = "compile" + capitalize(binary.getName()) + capitalize(coffeeScriptSourceSet.getName());
                 tasks.create(compileTaskName, PlayCoffeeScriptCompile.class, new Action<PlayCoffeeScriptCompile>() {
                     @Override
                     public void execute(PlayCoffeeScriptCompile coffeeScriptCompile) {
+                        coffeeScriptCompile.setDescription("Compiles coffeescript for the '" + coffeeScriptSourceSet.getName() + "' source set.");
+
                         File outputDirectory = outputDirectory(buildDir, binary, compileTaskName);
                         coffeeScriptCompile.setDestinationDir(outputDirectory);
                         coffeeScriptCompile.setSource(coffeeScriptSourceSet.getSource());

@@ -15,11 +15,13 @@
  */
 
 package org.gradle.play.integtest.fixtures
-
 import com.google.common.collect.Lists
+import org.apache.commons.io.output.CloseShieldOutputStream
+import org.apache.commons.io.output.TeeOutputStream
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.process.internal.ExecHandle
 import org.gradle.process.internal.ExecHandleBuilder
+import org.gradle.test.fixtures.ConcurrentTestUtil
 
 class DistributionTestExecHandleBuilder extends ExecHandleBuilder {
     final String port
@@ -45,32 +47,65 @@ class DistributionTestExecHandleBuilder extends ExecHandleBuilder {
 
     @Override
     ExecHandle build() {
-        return new DistributionTestExecHandle(super.build(), port)
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream()
+        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        this.setStandardOutput(new CloseShieldOutputStream(new TeeOutputStream(System.out, stdout)));
+        this.setErrorOutput(new CloseShieldOutputStream(new TeeOutputStream(System.err, errorOutput)));
+        return new DistributionTestExecHandle(super.build(), stdout, errorOutput)
     }
 
     public static class DistributionTestExecHandle implements ExecHandle {
+        final private ByteArrayOutputStream standardOutput
+        final private ByteArrayOutputStream errorOutput
+
         @Delegate
         final ExecHandle delegate
-        final String port
 
-        public DistributionTestExecHandle(ExecHandle delegate, String port) {
+        public DistributionTestExecHandle(ExecHandle delegate, ByteArrayOutputStream standardOutput, ByteArrayOutputStream errorOutput) {
             this.delegate = delegate
-            this.port = port
+            this.standardOutput = standardOutput
+            this.errorOutput = errorOutput
         }
 
-        void shutdown() {
+        void shutdown(int port) {
+            try {
+                stop(port)
+                waitForFinish()
+            } finally {
+                try {
+                    abort()
+                } catch (IllegalStateException e) {
+                    // Ignore if process is already not running
+                    println "Did not abort play process since current state is: ${state.toString()}"
+                }
+            }
+        }
+
+        private stop(int port) {
             try {
                 new URL("http://localhost:${port}/shutdown").bytes
             } catch (SocketException e) {
                 // Expected
             }
 
-            try {
-                abort()
-            } catch (IllegalStateException e) {
-                // Ignore if process is already not running
-                println "Did not abort play process since current state is: ${state.toString()}"
+            ConcurrentTestUtil.poll(30) {
+                try {
+                    def connection = new URL("http://localhost:${port}/").openConnection()
+                    connection.connect()
+                    // we can still connect to the application
+                    assert false: "Waiting for application to finally die"
+                } catch (IOException e) {
+                    // Application is dead
+                }
             }
+        }
+
+        ByteArrayOutputStream getStandardOutput() {
+            return standardOutput
+        }
+
+        ByteArrayOutputStream getErrorOutput() {
+            return errorOutput
         }
     }
 }

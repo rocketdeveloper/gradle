@@ -16,29 +16,30 @@
 
 package org.gradle.platform.base.internal.registry;
 
-import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectRegistry;
-import org.gradle.api.internal.resolve.DefaultProjectLocator;
-import org.gradle.api.internal.resolve.ProjectLocator;
-import org.gradle.deployment.internal.DefaultDeploymentRegistry;
-import org.gradle.deployment.internal.DeploymentRegistry;
-import org.gradle.internal.component.model.BinarySpecToArtifactConverterRegistry;
+import org.gradle.api.internal.resolve.DefaultProjectModelResolver;
+import org.gradle.api.internal.resolve.ProjectModelResolver;
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.scopes.PluginServiceRegistry;
-import org.gradle.internal.session.BuildSession;
-import org.gradle.language.base.internal.resolve.LanguageSourceSetLocalComponentFactory;
+import org.gradle.language.base.internal.model.FunctionalSourceSetNodeInitializerExtractionStrategy;
+import org.gradle.language.base.internal.model.FunctionalSourceSetSchemaExtractionStrategy;
+import org.gradle.language.base.internal.resolve.DependentSourceSetLocalComponentConverter;
 import org.gradle.model.internal.inspect.MethodModelRuleExtractor;
-import org.gradle.platform.base.Platform;
-import org.gradle.platform.base.internal.toolchain.DefaultToolResolver;
-import org.gradle.platform.base.internal.toolchain.ToolChainInternal;
-import org.gradle.platform.base.internal.toolchain.ToolResolver;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
+import org.gradle.model.internal.manage.schema.extract.ModelSchemaAspectExtractionStrategy;
+import org.gradle.platform.base.internal.VariantAspectExtractionStrategy;
 
 public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry {
 
     public void registerGlobalServices(ServiceRegistration registration) {
         registration.addProvider(new GlobalScopeServices());
+        registration.add(FunctionalSourceSetSchemaExtractionStrategy.class);
+        registration.add(FunctionalSourceSetNodeInitializerExtractionStrategy.class);
+    }
+
+    public void registerBuildSessionServices(ServiceRegistration registration) {
+
     }
 
     public void registerBuildServices(ServiceRegistration registration){
@@ -49,54 +50,29 @@ public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry 
     }
 
     public void registerProjectServices(ServiceRegistration registration) {
-        registration.addProvider(new ProjectScopeServices());
-    }
-
-    private static class ProjectScopeServices {
-        ToolResolver createToolResolver(ServiceRegistry services) {
-            DefaultToolResolver toolResolver = new DefaultToolResolver();
-            for (ToolChainInternal<?> toolChain : services.getAll(ToolChainInternal.class)) {
-                @SuppressWarnings("unchecked") ToolChainInternal<? extends Platform> converted = toolChain;
-                toolResolver.registerToolChain(converted);
-            }
-            return toolResolver;
-        }
     }
 
     private static class BuildScopeServices {
-        LanguageSourceSetLocalComponentFactory createLocalComponentFactory() {
-            return new LanguageSourceSetLocalComponentFactory();
+        DependentSourceSetLocalComponentConverter createLocalComponentFactory() {
+            return new DependentSourceSetLocalComponentConverter();
         }
 
-        ProjectLocator createProjectLocator(ProjectFinder finder) {
-            return new DefaultProjectLocator(finder);
-        }
-
-        ProjectFinder createProjectFinder(final ProjectRegistry<ProjectInternal> projectRegistry) {
-            return new ProjectFinder() {
-                @Override
-                public ProjectInternal getProject(String path) {
-                    return projectRegistry.getProject(path);
-                }
-            };
-        }
-
-        BinarySpecToArtifactConverterRegistry createBinaryToArtifactRegistry(ServiceRegistry serviceRegistry) {
-            return new BinarySpecToArtifactConverterRegistry(serviceRegistry);
+        ProjectModelResolver createProjectLocator(final ProjectRegistry<ProjectInternal> projectRegistry) {
+            return new DefaultProjectModelResolver(projectRegistry);
         }
     }
 
     private static class GlobalScopeServices {
-        MethodModelRuleExtractor createLanguageTypePluginInspector() {
-            return new LanguageTypeModelRuleExtractor();
+        MethodModelRuleExtractor createLanguageTypePluginInspector(ModelSchemaStore schemaStore) {
+            return new LanguageTypeModelRuleExtractor(schemaStore);
         }
 
-        MethodModelRuleExtractor createComponentModelPluginInspector() {
-            return new ComponentTypeModelRuleExtractor();
+        MethodModelRuleExtractor createComponentModelPluginInspector(ModelSchemaStore schemaStore) {
+            return new ComponentTypeModelRuleExtractor(schemaStore);
         }
 
-        MethodModelRuleExtractor createBinaryTypeModelPluginInspector() {
-            return new BinaryTypeModelRuleExtractor();
+        MethodModelRuleExtractor createBinaryTypeModelPluginInspector(ModelSchemaStore schemaStore) {
+            return new BinaryTypeModelRuleExtractor(schemaStore);
         }
 
         MethodModelRuleExtractor createComponentBinariesPluginInspector() {
@@ -106,8 +82,8 @@ public class ComponentModelBaseServiceRegistry implements PluginServiceRegistry 
             return new BinaryTasksModelRuleExtractor();
         }
 
-        DeploymentRegistry createDeploymentRegistry(BuildSession buildSession) {
-            return new DefaultDeploymentRegistry(buildSession);
+        ModelSchemaAspectExtractionStrategy createVariantAspectExtractionStrategy() {
+            return new VariantAspectExtractionStrategy();
         }
     }
 }

@@ -16,7 +16,6 @@
 
 package org.gradle.play.tasks;
 
-import org.gradle.api.GradleException;
 import org.gradle.api.Incubating;
 import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.FileCollection;
@@ -28,17 +27,18 @@ import org.gradle.api.tasks.compile.BaseForkOptions;
 import org.gradle.deployment.internal.DeploymentRegistry;
 import org.gradle.logging.ProgressLogger;
 import org.gradle.logging.ProgressLoggerFactory;
-import org.gradle.play.internal.run.DefaultPlayRunSpec;
-import org.gradle.play.internal.run.PlayApplicationDeploymentHandle;
-import org.gradle.play.internal.run.PlayRunSpec;
+import org.gradle.play.internal.run.*;
+import org.gradle.play.internal.toolchain.PlayToolProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
+import java.util.Set;
 
 /**
- * A Task to run a play application.
+ * Task to run a Play application.
  */
 @Incubating
 public class PlayRun extends ConventionTask {
@@ -53,16 +53,20 @@ public class PlayRun extends ConventionTask {
     private File assetsJar;
 
     @InputFiles
+    private Set<File> assetsDirs;
+
+    @InputFiles
     private FileCollection runtimeClasspath;
+
+    @InputFiles
+    private FileCollection changingClasspath;
 
     private BaseForkOptions forkOptions;
 
-    private DeploymentRegistry deploymentRegistry;
-
-    private String deploymentId;
+    private PlayToolProvider playToolProvider;
 
     /**
-     * fork options for the running a play application.
+     * fork options for the running a Play application.
      */
     public BaseForkOptions getForkOptions() {
         if (forkOptions == null) {
@@ -73,29 +77,34 @@ public class PlayRun extends ConventionTask {
 
     @TaskAction
     public void run() {
-        PlayApplicationDeploymentHandle deploymentHandle = deploymentRegistry.get(PlayApplicationDeploymentHandle.class, deploymentId);
-        if (deploymentHandle == null) {
-            throw new GradleException("There are no deployment handles registered with id '".concat(deploymentId).concat("'"));
-        }
-
         ProgressLoggerFactory progressLoggerFactory = getServices().get(ProgressLoggerFactory.class);
-        ProgressLogger progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
+        PlayApplicationDeploymentHandle deploymentHandle = registerOrFindDeploymentHandle(getPath());
+
+        if (!deploymentHandle.isRunning()) {
+            ProgressLogger progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
                 .start("Start Play server", "Starting Play");
 
-        int httpPort = getHttpPort();
-        PlayRunSpec spec = new DefaultPlayRunSpec(runtimeClasspath, applicationJar, assetsJar, getProject().getProjectDir(), getForkOptions(), httpPort);
-
-        try {
-            deploymentHandle.start(spec);
-            progressLogger.completed();
-            progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
-                    .start(String.format("Run Play App at http://localhost:%d/", httpPort),
-                            String.format("Running at http://localhost:%d/", httpPort));
-            if (!getProject().getGradle().getStartParameter().isContinuous()) {
-                waitForCtrlD();
+            try {
+                int httpPort = getHttpPort();
+                PlayRunSpec spec = new DefaultPlayRunSpec(runtimeClasspath, changingClasspath, applicationJar, assetsJar, assetsDirs, getProject().getProjectDir(), getForkOptions(), httpPort);
+                PlayApplicationRunnerToken runnerToken = playToolProvider.get(PlayApplicationRunner.class).start(spec);
+                deploymentHandle.start(runnerToken);
+            } finally {
+                progressLogger.completed();
             }
-        } finally {
-            progressLogger.completed();
+        }
+
+        if (!getProject().getGradle().getStartParameter().isContinuous()) {
+            ProgressLogger progressLogger = progressLoggerFactory.newOperation(PlayRun.class)
+                .start(String.format("Run Play App at http://localhost:%d/", httpPort),
+                    String.format("Running at http://localhost:%d/", httpPort));
+            try {
+                waitForCtrlD();
+            } finally {
+                progressLogger.completed();
+            }
+        } else {
+            logger.warn(String.format("Running Play App (%s) at http://localhost:%d/", getPath(), httpPort));
         }
     }
 
@@ -114,6 +123,13 @@ public class PlayRun extends ConventionTask {
         }
     }
 
+    /**
+     * The HTTP port listened to by the Play application.
+     *
+     * This port should be available.  The Play application will fail to start if the port is already in use.
+     *
+     * @return HTTP port
+     */
     public int getHttpPort() {
         return httpPort;
     }
@@ -122,23 +138,63 @@ public class PlayRun extends ConventionTask {
         this.httpPort = httpPort;
     }
 
+    /**
+     * The Play application jar to run.
+     */
+    public File getApplicationJar() {
+        return applicationJar;
+    }
+
     public void setApplicationJar(File applicationJar) {
         this.applicationJar = applicationJar;
+    }
+
+    /**
+     * The assets jar to run with the Play application.
+     */
+    public File getAssetsJar() {
+        return assetsJar;
     }
 
     public void setAssetsJar(File assetsJar) {
         this.assetsJar = assetsJar;
     }
 
+    /**
+     * The directories of the assets for the Play application (for live reload functionality).
+     */
+    public Set<File> getAssetsDirs() {
+        return assetsDirs;
+    }
+
+    public void setAssetsDirs(Set<File> assetsDirs) {
+        this.assetsDirs = assetsDirs;
+    }
+
     public void setRuntimeClasspath(FileCollection runtimeClasspath) {
         this.runtimeClasspath = runtimeClasspath;
     }
 
-    public void setDeploymentRegistry(DeploymentRegistry deploymentRegistry) {
-        this.deploymentRegistry = deploymentRegistry;
+    public void setChangingClasspath(FileCollection changingClasspath) {
+        this.changingClasspath = changingClasspath;
     }
 
-    public void setDeploymentId(String deploymentId) {
-        this.deploymentId = deploymentId;
+    public void setPlayToolProvider(PlayToolProvider playToolProvider) {
+        this.playToolProvider = playToolProvider;
+    }
+
+    @Inject
+    public DeploymentRegistry getDeploymentRegistry() {
+        throw new UnsupportedOperationException();
+    }
+
+    private PlayApplicationDeploymentHandle registerOrFindDeploymentHandle(String deploymentId) {
+        DeploymentRegistry deploymentRegistry = getDeploymentRegistry();
+        PlayApplicationDeploymentHandle deploymentHandle = deploymentRegistry.get(PlayApplicationDeploymentHandle.class, deploymentId);
+        if (deploymentHandle == null) {
+            deploymentHandle = new PlayApplicationDeploymentHandle(deploymentId);
+            deploymentRegistry.register(deploymentId, deploymentHandle);
+        }
+        return deploymentHandle;
     }
 }

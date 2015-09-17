@@ -710,12 +710,14 @@ class UnmanagedNodeBackedModelMapTest extends Specification {
 
         then:
         UnboundModelRulesException e = thrown()
-        normaliseLineSeparators(e.message) == """The following model rules are unbound:
-  $ElementRules.name#connectElementToInput($Bean.name, $String.name)
-    Mutable:
-      - <unspecified> ($Bean.name) parameter 1 in scope of 'beans.element\'
-    Immutable:
-      - <unspecified> ($String.name) parameter 2"""
+        normaliseLineSeparators(e.message).contains '''
+  UnmanagedNodeBackedModelMapTest.ElementRules#connectElementToInput
+    subject:
+      - <no path> UnmanagedNodeBackedModelMapTest.Bean (parameter 1) [*]
+          scope: beans.element
+    inputs:
+      - <no path> String (parameter 2) [*]
+'''
     }
 
     static class SetOther extends RuleSource {

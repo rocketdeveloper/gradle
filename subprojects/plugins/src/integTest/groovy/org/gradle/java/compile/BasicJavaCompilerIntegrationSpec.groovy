@@ -87,7 +87,6 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         file('encoded.out').getText("utf-8") == "\u03b1\u03b2\u03b3"
     }
 
-    @LeaksFileHandles
     def compilesWithSpecifiedDebugSettings() {
         given:
         goodCode()
@@ -155,7 +154,7 @@ repositories {
 }
 
 dependencies {
-    compile "org.codehaus.groovy:groovy:2.3.10"
+    compile "org.codehaus.groovy:groovy:2.4.4"
 }
 '''
     }
@@ -234,7 +233,7 @@ class Main {
         return new ClassFile(file(path))
     }
 
-    @LeaksFileHandles
+    @LeaksFileHandles("holds processor.jar open for in process compiler")
     def "can use annotation processor"() {
         when:
         buildFile << """

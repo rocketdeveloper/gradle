@@ -11,7 +11,7 @@ Specific sub streams have been broken out into other concurrent specs.
 
 We do not currently enforce that all ancestors of an input are realised, which means that there may still be pending mutations for the child (as a mutation of the parent).
 
-## Test Coverage
+### Test Coverage
 
 - Rule using child of managed node as input node has all mutations applied, that were expressed as mutations of the parent node
 - Rule using child of managed node can depend on a sibling, that has all mutations applied, that were expressed as mutations of the parent node
@@ -37,15 +37,15 @@ class Rules extends RuleSource {
     // in cycle…
     @Mutate void m3ToM1(@Path("m1") m1, @Path("m3") m3) {}
     @Mutate void m1ToM3(@Path("m3") m3, @Path("m1") m1) {}
-    
+
     @Mutate void addTask(ModelMap<Task> tasks, @Path("m1") m1) {}
 }
 ```
 
-The build will fail because the `m2ToM1` is indeed executed twice. 
+The build will fail because the `m2ToM1` is indeed executed twice.
 What should happen is that a cycle should be reported between `m3ToM1` and `m1ToM3`.
 
-The implementation should be done in such a way 
+The implementation should be done in such a way
 
 ### Test Coverage
 

@@ -31,9 +31,11 @@ public interface ModelNode {
     boolean hasLink(String name, ModelType<?> type);
 
     // Note: order is crucial here. Nodes are traversed through these states in the order defined below
-    public enum State {
-        Known(true), // Initial state. Only type info is available here
+    enum State {
+        Known(true), // Initial state. Only path and some projections are known here
+        ProjectionsDefined(true), // All projections are defined
         Created(true), // Private data has been created, initial rules discovered
+        RulesDefined(true), // Rules are defined
         DefaultsApplied(true), // Default values have been applied
         Initialized(true),
         Mutated(true),
@@ -104,8 +106,7 @@ public interface ModelNode {
     Optional<String> getTypeDescription();
 
     /**
-     * Gets the rules that have been executed on this node in the order in which they are applied.
-     *
+     * Gets the rules that have been executed on this node in the order in which they were executed.
      */
     List<ModelRuleDescriptor> getExecutedRules();
 }

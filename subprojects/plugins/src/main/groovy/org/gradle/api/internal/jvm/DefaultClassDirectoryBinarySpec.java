@@ -20,21 +20,23 @@ import org.gradle.api.DomainObjectSet;
 import org.gradle.api.internal.AbstractBuildableModelElement;
 import org.gradle.api.internal.DefaultDomainObjectSet;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
+import org.gradle.api.internal.rules.NamedDomainObjectFactoryRegistry;
 import org.gradle.internal.reflect.Instantiator;
+import org.gradle.jvm.ClassDirectoryBinarySpec;
 import org.gradle.jvm.JvmBinaryTasks;
 import org.gradle.jvm.internal.DefaultJvmBinaryTasks;
+import org.gradle.jvm.internal.toolchain.JavaToolChainInternal;
 import org.gradle.jvm.platform.JavaPlatform;
 import org.gradle.jvm.toolchain.JavaToolChain;
-import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.LanguageSourceSet;
 import org.gradle.model.ModelMap;
+import org.gradle.platform.base.BinarySpec;
 import org.gradle.platform.base.BinaryTasksCollection;
 import org.gradle.platform.base.internal.*;
-import org.gradle.platform.base.internal.toolchain.ToolResolver;
 
 import java.io.File;
-import java.util.Set;
 
+@SuppressWarnings("deprecation")
 public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelElement implements ClassDirectoryBinarySpecInternal {
     private final DefaultDomainObjectSet<LanguageSourceSet> sourceSets = new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet.class);
     private final BinaryNamingScheme namingScheme;
@@ -42,18 +44,16 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
     private final JavaToolChain toolChain;
     private final JavaPlatform platform;
     private final DefaultJvmBinaryTasks tasks;
-    private final ToolResolver toolResolver;
     private File classesDir;
     private File resourcesDir;
     private boolean buildable = true;
 
-    public DefaultClassDirectoryBinarySpec(String name, JavaToolChain toolChain, JavaPlatform platform, Instantiator instantiator, ITaskFactory taskFactory, ToolResolver toolResolver) {
+    public DefaultClassDirectoryBinarySpec(String name, JavaToolChain toolChain, JavaPlatform platform, Instantiator instantiator, ITaskFactory taskFactory) {
         this.name = name;
         this.toolChain = toolChain;
         this.platform = platform;
         this.namingScheme = new ClassDirectoryBinaryNamingScheme(removeClassesSuffix(name));
         this.tasks = instantiator.newInstance(DefaultJvmBinaryTasks.class, new DefaultBinaryTasksCollection(this, taskFactory));
-        this.toolResolver = toolResolver;
     }
 
     private String removeClassesSuffix(String name) {
@@ -61,6 +61,11 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
             return name.substring(0, name.length() - 7);
         }
         return name;
+    }
+
+    @Override
+    public Class<? extends BinarySpec> getPublicType() {
+        return ClassDirectoryBinarySpec.class;
     }
 
     public JvmBinaryTasks getTasks() {
@@ -85,16 +90,6 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
     }
 
     public void setToolChain(JavaToolChain toolChain) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public ToolResolver getToolResolver() {
-        return toolResolver;
-    }
-
-    @Override
-    public void setToolResolver(ToolResolver toolResolver) {
         throw new UnsupportedOperationException();
     }
 
@@ -134,31 +129,34 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
         this.resourcesDir = resourcesDir;
     }
 
-    public void setBinarySources(FunctionalSourceSet sources) {
-        throw new UnsupportedOperationException();
-    }
-
+    @Override
     public void sources(Action<? super ModelMap<LanguageSourceSet>> action) {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public DomainObjectSet<LanguageSourceSet> getSource() {
-        return sourceSets;
+        return getInputs();
     }
 
-    public void source(LanguageSourceSet source) {
+    @Override
+    public ModelMap<LanguageSourceSet> getSources() {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Set<LanguageSourceSet> getAllSources() {
-        throw new UnsupportedOperationException();
+    public DomainObjectSet<LanguageSourceSet> getInputs() {
+        return sourceSets;
     }
 
     @Override
     public void addSourceSet(LanguageSourceSet sourceSet) {
         sourceSets.add(sourceSet);
+    }
+
+    @Override
+    public NamedDomainObjectFactoryRegistry<LanguageSourceSet> getEntityInstantiator() {
+        throw new UnsupportedOperationException();
     }
 
     public String getDisplayName() {
@@ -174,6 +172,6 @@ public class DefaultClassDirectoryBinarySpec extends AbstractBuildableModelEleme
         if (!buildable) {
             return new FixedBuildAbility(false);
         }
-        return new ToolSearchBuildAbility(toolResolver.checkToolAvailability(getTargetPlatform()));
+        return new ToolSearchBuildAbility(((JavaToolChainInternal) getToolChain()).select(getTargetPlatform()));
     }
 }

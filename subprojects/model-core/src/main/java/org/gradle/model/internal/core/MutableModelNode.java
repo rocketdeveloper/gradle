@@ -121,9 +121,6 @@ public interface MutableModelNode extends ModelNode {
 
     Object getPrivateData();
 
-    @Nullable
-    MutableModelNode getTarget();
-
     void setTarget(ModelNode target);
 
     /**
@@ -131,7 +128,7 @@ public interface MutableModelNode extends ModelNode {
      */
     void ensureUsable();
 
-    void realize();
+    void ensureAtLeast(ModelNode.State state);
 
     void setHidden(boolean hidden);
 

@@ -24,7 +24,6 @@ import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
 @Requires(TestPrecondition.CAN_INSTALL_EXECUTABLE)
-@LeaksFileHandles
 class BinaryFlavorsIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     static final DEFAULT = HelloWorldApp.HELLO_WORLD
     static final FRENCH = HelloWorldApp.HELLO_WORLD_FRENCH
@@ -67,6 +66,7 @@ model {
         helloWorldApp.writeSources(file("src/main"), file("src/hello"), file("src/greetings"))
     }
 
+    @LeaksFileHandles
     def "can configure components for a single flavor"() {
         given:
         buildFile << """
@@ -100,6 +100,7 @@ model {
         installation("build/install/mainExecutable/german").assertInstalled()
     }
 
+    @LeaksFileHandles("can't delete build/install/mainExecutable/french")
     def "executable with flavors depends on library with matching flavors"() {
         when:
         buildFile << """
@@ -171,7 +172,7 @@ model {
         fails "mainExecutable"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: org.gradle.nativeplatform.plugins.NativeComponentModelPlugin\$Rules#createNativeBinaries")
+        failure.assertHasCause("Exception thrown while executing model rule: NativeComponentRules#createBinaries")
         failure.assertHasCause("Invalid Flavor: 'unknown'")
     }
 }

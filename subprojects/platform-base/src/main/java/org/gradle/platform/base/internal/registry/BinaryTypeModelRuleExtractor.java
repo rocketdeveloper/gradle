@@ -19,20 +19,21 @@ package org.gradle.platform.base.internal.registry;
 import com.google.common.collect.ImmutableList;
 import org.gradle.api.NamedDomainObjectFactory;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
-import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.reflect.Instantiator;
-import org.gradle.internal.reflect.JavaReflectionUtil;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.language.base.internal.model.BinarySpecFactoryRegistry;
 import org.gradle.language.base.plugins.ComponentModelBasePlugin;
 import org.gradle.model.internal.core.*;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.inspect.MethodRuleDefinition;
+import org.gradle.model.internal.manage.schema.ModelSchema;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.type.ModelType;
 import org.gradle.platform.base.BinarySpec;
 import org.gradle.platform.base.BinaryType;
 import org.gradle.platform.base.BinaryTypeBuilder;
 import org.gradle.platform.base.binary.BaseBinarySpec;
+import org.gradle.platform.base.internal.builder.TypeBuilderFactory;
 import org.gradle.platform.base.internal.builder.TypeBuilderInternal;
 
 import java.util.Arrays;
@@ -41,8 +42,13 @@ import java.util.List;
 import static org.gradle.internal.Cast.uncheckedCast;
 
 public class BinaryTypeModelRuleExtractor extends TypeModelRuleExtractor<BinaryType, BinarySpec, BaseBinarySpec> {
-    public BinaryTypeModelRuleExtractor() {
-        super("binary", BinarySpec.class, BaseBinarySpec.class, BinaryTypeBuilder.class, JavaReflectionUtil.factory(DirectInstantiator.INSTANCE, DefaultBinaryTypeBuilder.class));
+    public BinaryTypeModelRuleExtractor(ModelSchemaStore schemaStore) {
+        super("binary", BinarySpec.class, BaseBinarySpec.class, BinaryTypeBuilder.class, schemaStore, new TypeBuilderFactory<BinarySpec>() {
+            @Override
+            public TypeBuilderInternal<BinarySpec> create(ModelSchema<? extends BinarySpec> schema) {
+                return new DefaultBinaryTypeBuilder(schema);
+            }
+        });
     }
 
     @Override
@@ -57,8 +63,8 @@ public class BinaryTypeModelRuleExtractor extends TypeModelRuleExtractor<BinaryT
     }
 
     public static class DefaultBinaryTypeBuilder extends AbstractTypeBuilder<BinarySpec> implements BinaryTypeBuilder<BinarySpec> {
-        public DefaultBinaryTypeBuilder() {
-            super(BinaryType.class);
+        public DefaultBinaryTypeBuilder(ModelSchema<? extends BinarySpec> schema) {
+            super(BinaryType.class, schema);
         }
     }
 
@@ -97,10 +103,10 @@ public class BinaryTypeModelRuleExtractor extends TypeModelRuleExtractor<BinaryT
             final Class<BinarySpec> publicClass = uncheckedCast(publicType.getConcreteClass());
             ServiceRegistry serviceRegistry = ModelViews.assertType(inputs.get(0), ModelType.of(ServiceRegistry.class)).getInstance();
             final Instantiator instantiator = serviceRegistry.get(Instantiator.class);
-            final ModelView<ITaskFactory> taskFactory = ModelViews.assertType(inputs.get(1), ModelType.of(ITaskFactory.class));
+            final ITaskFactory taskFactory = ModelViews.assertType(inputs.get(1), ModelType.of(ITaskFactory.class)).getInstance();
             NamedDomainObjectFactory<BaseBinarySpec> factory = new NamedDomainObjectFactory<BaseBinarySpec>() {
                 public BaseBinarySpec create(String name) {
-                    return BaseBinarySpec.create(implementationType.getConcreteClass(), name, instantiator, taskFactory.getInstance());
+                    return BaseBinarySpec.create(publicClass, implementationType.getConcreteClass(), name, instantiator, taskFactory);
                 }
             };
             factories.registerFactory(publicClass, factory, descriptor);

@@ -56,7 +56,6 @@ public class LocalComponentDependencyMetaData implements DependencyMetaData {
 
     @Override
     public String toString() {
-        // TODO:DAZ Improve this copy from Ivy
         return "dependency: " + requested + " " + moduleConfiguration;
     }
 
@@ -135,9 +134,6 @@ public class LocalComponentDependencyMetaData implements DependencyMetaData {
         if (target instanceof ModuleComponentSelector) {
             ModuleComponentSelector moduleTarget = (ModuleComponentSelector) target;
             ModuleVersionSelector requestedVersion = DefaultModuleVersionSelector.newSelector(moduleTarget.getGroup(), moduleTarget.getModule(), moduleTarget.getVersion());
-            if (requestedVersion.equals(requested)) {
-                return this;
-            }
             return copyWithTarget(moduleTarget, requestedVersion);
         } else if (target instanceof ProjectComponentSelector) {
             return copyWithTarget(target, requested);

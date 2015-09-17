@@ -15,13 +15,18 @@
  */
 
 package org.gradle.platform.base.internal.registry
-
 import org.gradle.language.base.internal.model.BinarySpecFactoryRegistry
+import org.gradle.language.base.internal.testinterfaces.NotBinarySpec
+import org.gradle.language.base.internal.testinterfaces.SomeBinarySpec
 import org.gradle.language.base.plugins.ComponentModelBasePlugin
 import org.gradle.model.InvalidModelRuleDeclarationException
+import org.gradle.model.Managed
 import org.gradle.model.internal.core.ExtractedModelRule
 import org.gradle.model.internal.core.ModelActionRole
 import org.gradle.model.internal.core.ModelReference
+import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
+import org.gradle.model.internal.manage.schema.extract.ModelSchemaAspectExtractor
+import org.gradle.model.internal.manage.schema.extract.ModelSchemaExtractor
 import org.gradle.model.internal.type.ModelType
 import org.gradle.platform.base.BinarySpec
 import org.gradle.platform.base.BinaryType
@@ -33,7 +38,14 @@ import spock.lang.Unroll
 import java.lang.annotation.Annotation
 
 class BinaryTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtractorTest {
-    BinaryTypeModelRuleExtractor ruleHandler = new BinaryTypeModelRuleExtractor()
+    def aspectExtractor = new ModelSchemaAspectExtractor()
+    BinaryTypeModelRuleExtractor ruleHandler = new BinaryTypeModelRuleExtractor(
+        new DefaultModelSchemaStore(
+            new ModelSchemaExtractor([
+                new BinarySpecSpecializationSchemaExtractionStrategy(aspectExtractor)
+            ], aspectExtractor)
+        )
+    )
 
     @Override
     Class<? extends Annotation> getAnnotation() {
@@ -53,9 +65,9 @@ class BinaryTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtrac
         registration.action.subject == ModelReference.of(ModelType.of(BinarySpecFactoryRegistry))
     }
 
-    def "applies ComponentModelBasePlugin only when implementation not set"() {
+    def "applies ComponentModelBasePlugin only when implementation not set for unmanaged binary spec"() {
         when:
-        def registration = ruleHandler.registration(ruleDefinitionForMethod("noImplementationSet"))
+        def registration = ruleHandler.registration(ruleDefinitionForMethod("noImplementationSetForUnmanagedBinarySpec"))
 
         then:
         registration.ruleDependencies == [ComponentModelBasePlugin]
@@ -81,6 +93,7 @@ class BinaryTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtrac
         "extraParameter"                   | "Method annotated with @BinaryType must have a single parameter of type '${BinaryTypeBuilder.name}'."                  | "additional rule parameter"
         "returnValue"                      | "Method annotated with @BinaryType must not have a return value."                                                      | "method with return type"
         "implementationSetMultipleTimes"   | "Method annotated with @BinaryType cannot set default implementation multiple times."                                  | "implementation set multiple times"
+        "implementationSetForManagedType"  | "Method annotated with @BinaryType cannot set default implementation for managed type ${ManagedBinarySpec.name}."      | "implementation set for managed type"
         "noTypeParam"                      | "Parameter of type '${BinaryTypeBuilder.name}' must declare a type parameter."                                         | "missing type parameter"
         "notBinarySpec"                    | "Binary type '${NotBinarySpec.name}' is not a subtype of '${BinarySpec.name}'."                                        | "type not extending BinarySpec"
         "notCustomBinary"                  | "Binary type '${BinarySpec.name}' is not a subtype of '${BinarySpec.name}'."                                           | "type is BinarySpec"
@@ -92,22 +105,22 @@ class BinaryTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtrac
         "noDefaultConstructor"             | "Binary implementation '${NoDefaultConstructor.name}' must have public default constructor."                           | "implementation with no public default constructor"
     }
 
-    interface SomeBinarySpec extends BinarySpec {}
 
     static class SomeBinarySpecImpl extends BaseBinarySpec implements SomeBinarySpec {}
 
     static class SomeBinarySpecOtherImpl extends SomeBinarySpecImpl {}
 
-    interface NotBinarySpec {}
-
     static class NotImplementingCustomBinary extends BaseBinarySpec implements BinarySpec {}
 
-    abstract static class NotExtendingBaseBinarySpec implements BinaryTypeModelRuleExtractorTest.SomeBinarySpec {}
+    abstract static class NotExtendingBaseBinarySpec implements SomeBinarySpec {}
 
     static class NoDefaultConstructor extends BaseBinarySpec implements SomeBinarySpec {
         NoDefaultConstructor(String arg) {
         }
     }
+
+    @Managed
+    static abstract class ManagedBinarySpec implements BinarySpec {}
 
     static class Rules {
         @BinaryType
@@ -124,13 +137,18 @@ class BinaryTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtrac
         }
 
         @BinaryType
-        static void noImplementationSet(BinaryTypeBuilder<SomeBinarySpec> builder) {
+        static void noImplementationSetForUnmanagedBinarySpec(BinaryTypeBuilder<SomeBinarySpec> builder) {
         }
 
         @BinaryType
         static void implementationSetMultipleTimes(BinaryTypeBuilder<SomeBinarySpec> builder) {
             builder.defaultImplementation(SomeBinarySpecImpl)
             builder.defaultImplementation(SomeBinarySpecOtherImpl)
+        }
+
+        @BinaryType
+        static void implementationSetForManagedType(BinaryTypeBuilder<ManagedBinarySpec> builder) {
+            builder.defaultImplementation(ManagedBinarySpec)
         }
 
         @BinaryType

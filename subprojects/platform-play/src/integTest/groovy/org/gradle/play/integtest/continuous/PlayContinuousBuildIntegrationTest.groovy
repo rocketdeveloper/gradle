@@ -16,13 +16,12 @@
 
 package org.gradle.play.integtest.continuous
 
-import org.gradle.play.integtest.fixtures.AbstractPlayContinuousBuildIntegrationTest
+import org.gradle.play.integtest.fixtures.AbstractMultiVersionPlayContinuousBuildIntegrationTest
 import org.gradle.play.integtest.fixtures.RunningPlayApp
 import org.gradle.play.integtest.fixtures.app.BasicPlayApp
-import org.gradle.play.integtest.fixtures.app.PlayApp
-import spock.util.concurrent.PollingConditions
+import org.gradle.play.integtest.fixtures.PlayApp
 
-class PlayContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildIntegrationTest {
+class PlayContinuousBuildIntegrationTest extends AbstractMultiVersionPlayContinuousBuildIntegrationTest {
     RunningPlayApp runningApp = new RunningPlayApp(testDirectory)
     PlayApp playApp = new BasicPlayApp()
 
@@ -32,13 +31,6 @@ class PlayContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildInte
 
         then:
         appIsRunningAndDeployed()
-
-        and: "the build is waiting for changes"
-        doesntExit()
-
-        cleanup: "stopping gradle"
-        stopGradle()
-        appIsStopped()
     }
 
     def "can run play app multiple times with continuous build" () {
@@ -65,55 +57,6 @@ class PlayContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildInte
 
         then:
         succeeds()
-
-        cleanup: "stopping gradle"
-        stopGradle()
-        appIsStopped()
-    }
-
-    def "can modify play app while app is running in continuous build"() {
-        when:
-        succeeds("runPlayBinary")
-
-        then:
-        appIsRunningAndDeployed()
-
-        when:
-        addHelloWorld()
-
-        then:
-        succeeds()
-        runningApp.playUrl('hello').text == 'Hello world'
-
-        cleanup: "stopping gradle"
-        stopGradle()
-        appIsStopped()
-    }
-
-    def "can modify play app before it has been started"() {
-        when:
-        addHelloWorld()
-        succeeds("runPlayBinary")
-
-        then:
-        appIsRunningAndDeployed()
-        runningApp.playUrl('hello').text == 'Hello world'
-
-        cleanup: "stopping gradle"
-        stopGradle()
-        appIsStopped()
-    }
-
-    private void addHelloWorld() {
-        file("conf/routes") << "\nGET     /hello                   controllers.Application.hello"
-        file("app/controllers/Application.scala").with {
-            text = text.replaceFirst(/(?s)\}\s*$/, '''
-  def hello = Action {
-    Ok("Hello world")
-  }
-}
-''')
-        }
     }
 
     def "build failure prior to launch does not prevent launch on subsequent build" () {
@@ -134,10 +77,6 @@ class PlayContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildInte
 
         and:
         appIsRunningAndDeployed()
-
-        cleanup: "stopping gradle"
-        stopGradle()
-        appIsStopped()
     }
 
     def "play application is stopped when build is cancelled" () {
@@ -148,49 +87,9 @@ class PlayContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildInte
         appIsRunningAndDeployed()
 
         when:
-        println "sending ctrl-d"
-        control_D()
+        gradle.cancel()
 
         then:
         cancelsAndExits()
-
-        and:
-        appIsStopped()
-    }
-
-    def "play run task blocks when not using continuous build" () {
-        when:
-        executer.withStdIn(System.in)
-        gradle = executer.withTasks("runPlayBinary").withForceInteractive(true).start()
-
-        then:
-        appIsRunningAndDeployed()
-
-        and:
-        buildIsBlocked()
-
-        when:
-        println "sending ctrl-d"
-        control_D()
-
-        then:
-        buildFinishes()
-
-        and:
-        appIsStopped()
-    }
-
-    def buildFinishes() {
-        new PollingConditions().within(shutdownTimeout) {
-            assert !gradle.running
-        }
-        true
-    }
-
-    def buildIsBlocked() {
-        doesntExit()
-        assert ! buildOutputSoFar().contains("BUILD SUCCESSFUL")
-        assert ! buildOutputSoFar().contains("BUILD FAILED")
-        true
     }
 }

@@ -20,12 +20,14 @@ import org.gradle.api.Task
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.internal.AbstractBuildableModelElement
 import org.gradle.language.base.LanguageSourceSet
+import org.gradle.language.base.internal.testinterfaces.CustomLanguageSourceSet
 import org.gradle.language.base.plugins.ComponentModelBasePlugin
 import org.gradle.language.base.sources.BaseLanguageSourceSet
 import org.gradle.model.InvalidModelRuleDeclarationException
 import org.gradle.model.internal.core.ExtractedModelRule
 import org.gradle.model.internal.core.ModelActionRole
 import org.gradle.model.internal.core.ModelReference
+import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
 import org.gradle.platform.base.InvalidModelException
 import org.gradle.platform.base.LanguageType
 import org.gradle.platform.base.LanguageTypeBuilder
@@ -39,7 +41,7 @@ class LanguageTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtr
 
     Class<?> ruleClass = Rules
 
-    LanguageTypeModelRuleExtractor ruleHandler = new LanguageTypeModelRuleExtractor()
+    LanguageTypeModelRuleExtractor ruleHandler = new LanguageTypeModelRuleExtractor(DefaultModelSchemaStore.getInstance())
 
     @Override
     Class<? extends Annotation> getAnnotation() {
@@ -92,8 +94,6 @@ class LanguageTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtr
         registration.ruleDependencies == [ComponentModelBasePlugin]
         registration.type == ExtractedModelRule.Type.DEPENDENCIES
     }
-
-    interface CustomLanguageSourceSet extends LanguageSourceSet {}
 
     static class ImplementingCustomLanguageSourceSet extends BaseLanguageSourceSet implements CustomLanguageSourceSet {
     }

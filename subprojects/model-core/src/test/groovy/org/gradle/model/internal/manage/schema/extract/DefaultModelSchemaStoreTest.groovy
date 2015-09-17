@@ -15,22 +15,20 @@
  */
 
 package org.gradle.model.internal.manage.schema.extract
-
 import groovy.transform.CompileStatic
-import org.codehaus.groovy.reflection.ClassInfo
 import org.gradle.model.Managed
 import org.gradle.model.ModelSet
-import org.gradle.model.internal.manage.schema.ModelStructSchema
+import org.gradle.model.internal.manage.schema.ModelManagedImplStructSchema
 import org.gradle.model.internal.type.ModelType
+import org.gradle.test.fixtures.ConcurrentTestUtil
 import spock.lang.Specification
 import spock.lang.Unroll
-import spock.util.concurrent.PollingConditions
 
 import java.beans.Introspector
 
 class DefaultModelSchemaStoreTest extends Specification {
 
-    def store = new DefaultModelSchemaStore()
+    def store = new DefaultModelSchemaStore(new ModelSchemaExtractor());
 
     def "can get schema"() {
         // intentionally use two different “instances” of the same type
@@ -54,7 +52,7 @@ class DefaultModelSchemaStoreTest extends Specification {
         cl.clearCache()
 
         then:
-        new PollingConditions(timeout: 10).eventually {
+        ConcurrentTestUtil.poll(10) {
             System.gc()
             store.cleanUp()
             store.size() == 0
@@ -84,11 +82,11 @@ class DefaultModelSchemaStoreTest extends Specification {
         forcefullyClearReferences(schema)
 
         then:
-        new PollingConditions(timeout: 10).eventually {
+        ConcurrentTestUtil.poll(10) {
             System.gc()
             store.cleanUp()
             store.size() == 0
-            schema.managedImpl == null // collected too
+            schema.implementationType == null // collected too
         }
 
         where:
@@ -97,20 +95,17 @@ class DefaultModelSchemaStoreTest extends Specification {
 
     @CompileStatic
     // must be compile static to avoid call sites being created with soft class refs
-    private static void forcefullyClearReferences(ModelStructSchema schema) {
+    private static void forcefullyClearReferences(ModelManagedImplStructSchema schema) {
         // Remove strong internal circular ref
         (schema.type.rawClass.classLoader as GroovyClassLoader).clearCache()
 
         // Remove soft references (dependent on Groovy internals)
-        def f = ClassInfo.getDeclaredField("globalClassSet")
-        f.setAccessible(true)
-        ClassInfo.ClassInfoSet globalClassSet = f.get(null) as ClassInfo.ClassInfoSet
-        globalClassSet.remove(schema.type.rawClass)
-        globalClassSet.remove(schema.managedImpl)
+        ModelStoreTestUtils.removeClassFromGlobalClassSet(schema.type.rawClass)
+        ModelStoreTestUtils.removeClassFromGlobalClassSet(schema.implementationType)
 
         // Remove soft references
         Introspector.flushFromCaches(schema.type.rawClass)
-        Introspector.flushFromCaches(schema.managedImpl)
+        Introspector.flushFromCaches(schema.implementationType)
     }
 
     def "canonicalizes introspection for different sites of generic type"() {

@@ -16,50 +16,59 @@
 
 package org.gradle.play.internal.run;
 
+import org.gradle.BuildAdapter;
+import org.gradle.BuildResult;
+import org.gradle.api.invocation.Gradle;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.deployment.internal.DeploymentHandle;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 public class PlayApplicationDeploymentHandle implements DeploymentHandle {
-    private final String id;
-    private final PlayApplicationRunner runner;
-    private final AtomicBoolean stopped = new AtomicBoolean(true);
-    private PlayApplicationRunnerToken runnerToken;
-    private static Logger logger = Logging.getLogger(PlayApplicationDeploymentHandle.class);
 
-    public PlayApplicationDeploymentHandle(String id, PlayApplicationRunner runner) {
+    private static final Logger LOGGER = Logging.getLogger(PlayApplicationDeploymentHandle.class);
+
+    private PlayApplicationRunnerToken runnerToken;
+    private final String id;
+
+    public PlayApplicationDeploymentHandle(String id) {
         this.id = id;
-        this.runner = runner;
     }
 
-    @Override
-    public String getId() {
-        return id;
+    public void start(PlayApplicationRunnerToken runnerToken) {
+        this.runnerToken = runnerToken;
     }
 
     @Override
     public boolean isRunning() {
-        return !stopped.get();
+        return runnerToken != null && runnerToken.isRunning();
+    }
+
+    @Override
+    public void onNewBuild(Gradle gradle) {
+        gradle.addBuildListener(new BuildAdapter() {
+            @Override
+            public void buildFinished(BuildResult result) {
+                reloadFromResult(result);
+            }
+        });
+    }
+
+    void reloadFromResult(BuildResult result) {
+        if (isRunning()) {
+            Throwable failure = result.getFailure();
+            if (failure != null) {
+                runnerToken.rebuildFailure(failure);
+            } else {
+                runnerToken.rebuildSuccess();
+            }
+        }
     }
 
     @Override
     public void stop() {
         if (isRunning()) {
-            logger.info("Stopping Play deployment handle for " + id);
+            LOGGER.info("Stopping Play deployment handle for " + id);
             runnerToken.stop();
-            stopped.set(true);
-        }
-    }
-
-    public void start(PlayRunSpec spec) {
-        if (stopped.get()) {
-            logger.info("Starting Play deployment handle for " + id);
-            runnerToken = runner.start(spec);
-            stopped.set(false);
-        } else {
-            runnerToken.rebuildSuccess();
         }
     }
 }

@@ -21,12 +21,12 @@ import org.gradle.api.Incubating;
 import org.gradle.api.Named;
 import org.gradle.api.Transformer;
 import org.gradle.internal.Actions;
-import org.gradle.internal.BiAction;
-import org.gradle.internal.Cast;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.reflect.ObjectInstantiationException;
 import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.LanguageSourceSet;
+import org.gradle.language.base.ProjectSourceSet;
+import org.gradle.language.base.internal.DefaultFunctionalSourceSet;
 import org.gradle.language.base.internal.LanguageSourceSetInternal;
 import org.gradle.model.ModelMap;
 import org.gradle.model.collection.internal.BridgedCollections;
@@ -39,9 +39,9 @@ import org.gradle.model.internal.registry.RuleContext;
 import org.gradle.model.internal.type.ModelType;
 import org.gradle.model.internal.type.ModelTypes;
 import org.gradle.platform.base.*;
-import org.gradle.platform.base.internal.BinarySpecFactory;
 import org.gradle.platform.base.internal.BinarySpecInternal;
 import org.gradle.platform.base.internal.ComponentSpecInternal;
+import org.gradle.util.DeprecationLogger;
 
 import java.util.Collections;
 import java.util.Set;
@@ -50,26 +50,30 @@ import java.util.Set;
  * Base class for custom component implementations. A custom implementation of {@link ComponentSpec} must extend this type.
  */
 @Incubating
+// Needs to be here instead of the specific methods, because Java 6 and 7 will throw warnings otherwise
+@SuppressWarnings("deprecation")
 public abstract class BaseComponentSpec implements ComponentSpecInternal {
 
-    public static final BiAction<MutableModelNode, BinarySpec> CREATE_BINARY_SOURCE_SET = new BiAction<MutableModelNode, BinarySpec>() {
+    private static final Transformer<FunctionalSourceSet, MutableModelNode> PUSH_FUNCTIONAL_SOURCE_SET_TO_NODE = new Transformer<FunctionalSourceSet, MutableModelNode>() {
         @Override
-        public void execute(MutableModelNode modelNode, BinarySpec binarySpec) {
-            BinarySpecInternal binarySpecInternal = Cast.uncheckedCast(binarySpec);
-            ComponentSpec componentSpec = modelNode.getParent().getParent().getPrivateData(ModelType.of(ComponentSpec.class));
-            ComponentSpecInternal componentSpecInternal = Cast.uncheckedCast(componentSpec);
-            FunctionalSourceSet componentSources = componentSpecInternal.getSources();
-            FunctionalSourceSet binarySources = componentSources.copy(binarySpec.getName());
-            binarySpecInternal.setBinarySources(binarySources);
+        public FunctionalSourceSet transform(MutableModelNode modelNode) {
+            BaseComponentSpec componentSpec = (BaseComponentSpec) modelNode.getParent().getPrivateData(ModelType.of(ComponentSpec.class));
+            return componentSpec.mainSourceSet;
         }
     };
 
-    public static final Transformer<FunctionalSourceSet, MutableModelNode> PUSH_FUNCTIONAL_SOURCE_SET_TO_NODE = new Transformer<FunctionalSourceSet, MutableModelNode>() {
+    private static final Transformer<NamedEntityInstantiator<LanguageSourceSet>, MutableModelNode> SOURCE_SET_CREATOR = new Transformer<NamedEntityInstantiator<LanguageSourceSet>, MutableModelNode>() {
         @Override
-        public FunctionalSourceSet transform(MutableModelNode modelNode) {
-            MutableModelNode componentNode = modelNode.getParent();
-            BaseComponentSpec componentSpec = Cast.uncheckedCast(componentNode.getPrivateData(ModelType.of(ComponentSpec.class)));
-            return componentSpec.mainSourceSet;
+        public NamedEntityInstantiator<LanguageSourceSet> transform(final MutableModelNode modelNode) {
+            return new NamedEntityInstantiator<LanguageSourceSet>() {
+                @Override
+                public <S extends LanguageSourceSet> S create(String name, Class<S> type) {
+                    FunctionalSourceSet sourceSet = modelNode.getPrivateData(FunctionalSourceSet.class);
+                    S s = sourceSet.getEntityInstantiator().create(name, type);
+                    sourceSet.add(s);
+                    return s;
+                }
+            };
         }
     };
 
@@ -82,11 +86,12 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
     private final MutableModelNode sources;
     private MutableModelNode modelNode;
 
-    public static <T extends BaseComponentSpec> T create(Class<T> type, ComponentSpecIdentifier identifier, MutableModelNode modelNode, FunctionalSourceSet mainSourceSet, Instantiator instantiator) {
+    public static <T extends BaseComponentSpec> T create(Class<T> type, ComponentSpecIdentifier identifier, MutableModelNode modelNode, ProjectSourceSet allSourceSets, Instantiator instantiator, NodeInitializerRegistry nodeInitializerRegistry) {
         if (type.equals(BaseComponentSpec.class)) {
             throw new ModelInstantiationException("Cannot create instance of abstract class BaseComponentSpec.");
         }
-        nextComponentInfo.set(new ComponentInfo(identifier, modelNode, type.getSimpleName(), mainSourceSet, instantiator));
+        FunctionalSourceSet mainSourceSet = instantiator.newInstance(DefaultFunctionalSourceSet.class, identifier.getName(), instantiator, allSourceSets);
+        nextComponentInfo.set(new ComponentInfo(identifier, modelNode, type.getSimpleName(), mainSourceSet, instantiator, nodeInitializerRegistry));
         try {
             try {
                 return instantiator.newInstance(type);
@@ -119,52 +124,37 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
                 .withProjection(
                     ModelMapModelProjection.unmanaged(
                         BinarySpec.class,
-                        NodeBackedModelMap.createUsingFactory(ModelReference.of(BinarySpecFactory.class))
+                        NodeBackedModelMap.createUsingRegistry(ModelType.of(BinarySpec.class), info.nodeInitializerRegistry)
                     )
                 )
                 .build()
         );
         binaries = modelNode.getLink("binaries");
         assert binaries != null;
-        binaries.applyToAllLinks(ModelActionRole.Defaults, DirectNodeNoInputsModelAction.of(
-            ModelReference.of(BinarySpecInternal.PUBLIC_MODEL_TYPE),
-            new NestedModelRuleDescriptor(modelNode.getDescriptor(), ".binaries"),
-            CREATE_BINARY_SOURCE_SET
-        ));
 
+        final ModelPath sourcesNodePath = modelNode.getPath().child("sources");
         ModelRuleDescriptor sourcesDescriptor = new NestedModelRuleDescriptor(modelNode.getDescriptor(), ".sources");
         modelNode.addLink(
-            BridgedCollections.creator(
-                ModelReference.of(modelNode.getPath().child("sources"), FunctionalSourceSet.class),
-                PUSH_FUNCTIONAL_SOURCE_SET_TO_NODE,
-                new Named.Namer(),
-                sourcesDescriptor.toString(),
-                BridgedCollections.itemDescriptor(sourcesDescriptor.toString())
-            )
+            BridgedCollections
+                .creator(
+                    ModelReference.of(sourcesNodePath, FunctionalSourceSet.class),
+                    PUSH_FUNCTIONAL_SOURCE_SET_TO_NODE,
+                    new Named.Namer(),
+                    sourcesDescriptor.toString(),
+                    BridgedCollections.itemDescriptor(sourcesDescriptor.toString())
+                )
                 .withProjection(
                     PolymorphicModelMapProjection.ofEager(
                         LanguageSourceSetInternal.PUBLIC_MODEL_TYPE,
-                        NodeBackedModelMap.createUsingParentNode(new Transformer<NamedEntityInstantiator<LanguageSourceSet>, MutableModelNode>() {
-                            @Override
-                            public NamedEntityInstantiator<LanguageSourceSet> transform(MutableModelNode modelNode) {
-                                final NamedEntityInstantiator<LanguageSourceSet> entityInstantiator = modelNode.getPrivateData(FunctionalSourceSet.class).getEntityInstantiator();
-                                return new NamedEntityInstantiator<LanguageSourceSet>() {
-                                    @Override
-                                    public <S extends LanguageSourceSet> S create(String name, Class<S> type) {
-                                        S s = entityInstantiator.create(name, type);
-                                        mainSourceSet.add(s);
-                                        return s;
-                                    }
-                                };
-                            }
-                        })
+                        NodeBackedModelMap.createUsingParentNode(SOURCE_SET_CREATOR)
                     )
                 )
                 .withProjection(UnmanagedModelProjection.of(FunctionalSourceSet.class))
                 .build()
         );
-        sources = modelNode.getLink("sources");
-        assert sources != null;
+
+        this.sources = modelNode.getLink("sources");
+        assert this.sources != null;
     }
 
     public String getName() {
@@ -190,6 +180,12 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
 
     @Override
     public ModelMap<LanguageSourceSet> getSource() {
+        DeprecationLogger.nagUserOfReplacedProperty("source", "sources");
+        return getSources();
+    }
+
+    @Override
+    public ModelMap<LanguageSourceSet> getSources() {
         sources.ensureUsable();
         return sources.asWritable(
             ModelTypes.modelMap(LanguageSourceSet.class),
@@ -200,7 +196,7 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
 
     @Override
     public void sources(Action<? super ModelMap<LanguageSourceSet>> action) {
-        action.execute(getSource());
+        action.execute(getSources());
     }
 
     @Override
@@ -218,11 +214,11 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
         action.execute(getBinaries());
     }
 
-    public FunctionalSourceSet getSources() {
+    public FunctionalSourceSet getFunctionalSourceSet() {
         return mainSourceSet;
     }
 
-    public Set<Class<? extends TransformationFileType>> getInputTypes() {
+    public Set<? extends Class<? extends TransformationFileType>> getInputTypes() {
         return Collections.emptySet();
     }
 
@@ -232,19 +228,22 @@ public abstract class BaseComponentSpec implements ComponentSpecInternal {
         final String typeName;
         final FunctionalSourceSet sourceSets;
         final Instantiator instantiator;
+        final NodeInitializerRegistry nodeInitializerRegistry;
 
         private ComponentInfo(
             ComponentSpecIdentifier componentIdentifier,
             MutableModelNode modelNode,
             String typeName,
             FunctionalSourceSet sourceSets,
-            Instantiator instantiator
+            Instantiator instantiator,
+            NodeInitializerRegistry nodeInitializerRegistry
         ) {
             this.componentIdentifier = componentIdentifier;
             this.modelNode = modelNode;
             this.typeName = typeName;
             this.sourceSets = sourceSets;
             this.instantiator = instantiator;
+            this.nodeInitializerRegistry = nodeInitializerRegistry;
         }
     }
 

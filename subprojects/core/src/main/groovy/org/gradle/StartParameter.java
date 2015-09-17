@@ -21,7 +21,7 @@ import com.google.common.collect.Sets;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.gradle.api.Incubating;
-import org.gradle.api.internal.classpath.DefaultModuleRegistry;
+import org.gradle.api.internal.classpath.DefaultGradleDistributionLocator;
 import org.gradle.initialization.BuildLayoutParameters;
 import org.gradle.initialization.CompositeInitScriptFinder;
 import org.gradle.initialization.DistributionInitScriptFinder;
@@ -32,6 +32,7 @@ import org.gradle.util.GFileUtils;
 
 import java.io.File;
 import java.io.Serializable;
+import java.net.URI;
 import java.util.*;
 
 /**
@@ -76,6 +77,7 @@ public class StartParameter extends LoggingConfiguration implements Serializable
     private boolean configureOnDemand;
     private int maxWorkerCount;
     private boolean continuous;
+    private List<URI> classpath = new ArrayList<URI>();
 
     /**
      * Sets the project's cache location. Set to null to use the default location.
@@ -97,7 +99,7 @@ public class StartParameter extends LoggingConfiguration implements Serializable
      * Creates a {@code StartParameter} with default values. This is roughly equivalent to running Gradle on the command-line with no arguments.
      */
     public StartParameter() {
-        gradleHomeDir = new DefaultModuleRegistry().getGradleHome();
+        gradleHomeDir = new DefaultGradleDistributionLocator().getGradleHome();
 
         BuildLayoutParameters layoutParameters = new BuildLayoutParameters();
         searchUpwards = layoutParameters.getSearchUpwards();
@@ -160,6 +162,7 @@ public class StartParameter extends LoggingConfiguration implements Serializable
         p.parallelProjectExecution = parallelProjectExecution;
         p.configureOnDemand = configureOnDemand;
         p.maxWorkerCount = maxWorkerCount;
+        p.classpath = classpath;
         return p;
     }
 
@@ -678,6 +681,7 @@ public class StartParameter extends LoggingConfiguration implements Serializable
                 + ", parallelProjectExecution=" + parallelProjectExecution
                 + ", configureOnDemand=" + configureOnDemand
                 + ", maxWorkerCount=" + maxWorkerCount
+                + ", classpath=" + classpath
                 + '}';
     }
 
@@ -701,5 +705,26 @@ public class StartParameter extends LoggingConfiguration implements Serializable
     @Incubating
     public void setContinuous(boolean enabled) {
         this.continuous = enabled;
+    }
+
+    /**
+     * Returns the injected classpath URIs used for loading classes.
+     *
+     * @return Classpath URIs
+     */
+    @Incubating
+    public List<URI> getClasspath() {
+        return classpath;
+    }
+
+    /**
+     * Specifies classpath URIs used for loading user-defined classes. This list is in addition to the default classpath.
+     *
+     * @param classpath Classpath URIs
+     * @see #getClasspath()
+     */
+    @Incubating
+    public void setClasspath(List<URI> classpath) {
+        this.classpath = classpath;
     }
 }

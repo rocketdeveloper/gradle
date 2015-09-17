@@ -17,23 +17,15 @@
 package org.gradle.play.internal.routes;
 
 import java.util.Arrays;
-import java.util.List;
 
 abstract class DefaultVersionedRoutesCompilerAdapter implements VersionedRoutesCompilerAdapter {
+    private static final Iterable<String> SHARED_PACKAGES = Arrays.asList("play.router", "scala.collection", "scala.collection.mutable", "scala.util.matching", "play.routes.compiler");
     private final String playVersion;
     private final String scalaVersion;
 
     public DefaultVersionedRoutesCompilerAdapter(String playVersion, String scalaVersion) {
         this.playVersion = playVersion;
         this.scalaVersion = scalaVersion;
-    }
-
-    protected boolean isGenerateReverseRoute() {
-        return true;
-    }
-
-    protected boolean isNamespaceReverseRouter() {
-        return false;
     }
 
     protected boolean isGenerateRefReverseRouter() {
@@ -44,7 +36,7 @@ abstract class DefaultVersionedRoutesCompilerAdapter implements VersionedRoutesC
         return String.format("com.typesafe.play:routes-compiler_%s:%s", scalaVersion, playVersion);
     }
 
-    public List<String> getClassLoaderPackages() {
-        return Arrays.asList("play.router", "scala.collection", "scala.collection.mutable", "scala.util.matching");
+    public Iterable<String> getClassLoaderPackages() {
+        return SHARED_PACKAGES;
     }
 }

@@ -16,16 +16,14 @@
 
 package org.gradle.model.internal.manage.schema.extract;
 
-import org.gradle.api.Nullable;
 import org.gradle.model.ModelMap;
 import org.gradle.model.internal.core.ModelMapGroovyDecorator;
-import org.gradle.model.internal.manage.schema.ModelSchema;
-import org.gradle.model.internal.manage.schema.cache.ModelSchemaCache;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
+import org.gradle.model.internal.manage.schema.SpecializedMapSchema;
 import org.gradle.model.internal.type.ModelType;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.Collections;
 
 /**
  * Currently only handles interfaces with no type parameters that directly extend ModelMap.
@@ -33,35 +31,30 @@ import java.util.Collections;
 public class SpecializedMapStrategy implements ModelSchemaExtractionStrategy {
     private final ManagedCollectionProxyClassGenerator generator = new ManagedCollectionProxyClassGenerator();
 
-    @Nullable
     @Override
-    public <T> ModelSchemaExtractionResult<T> extract(ModelSchemaExtractionContext<T> extractionContext, ModelSchemaCache cache) {
+    public <T> void extract(ModelSchemaExtractionContext<T> extractionContext, ModelSchemaStore store) {
         Type type = extractionContext.getType().getType();
         if (!(type instanceof Class)) {
-            return null;
+            return;
         }
         Class<?> contractType = (Class<?>) type;
         if (!contractType.isInterface()) {
-            return null;
+            return;
         }
         if (contractType.getGenericInterfaces().length != 1) {
-            return null;
+            return;
         }
         Type superType = contractType.getGenericInterfaces()[0];
         if (!(superType instanceof ParameterizedType)) {
-            return null;
+            return;
         }
         ParameterizedType parameterizedSuperType = (ParameterizedType) superType;
         if (!parameterizedSuperType.getRawType().equals(ModelMap.class)) {
-            return null;
+            return;
         }
         ModelType<?> elementType = ModelType.of(parameterizedSuperType.getActualTypeArguments()[0]);
         Class<?> proxyImpl = generator.generate(ModelMapGroovyDecorator.class, contractType);
-        return new ModelSchemaExtractionResult<T>(ModelSchema.specializedMap(extractionContext.getType(), elementType, proxyImpl));
+        extractionContext.found(new SpecializedMapSchema<T>(extractionContext.getType(), elementType, proxyImpl));
     }
 
-    @Override
-    public Iterable<String> getSupportedManagedTypes() {
-        return Collections.emptySet();
-    }
 }

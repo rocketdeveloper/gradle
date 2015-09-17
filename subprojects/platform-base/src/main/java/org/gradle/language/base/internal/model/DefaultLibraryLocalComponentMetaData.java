@@ -18,10 +18,10 @@ package org.gradle.language.base.internal.model;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
-import org.gradle.api.artifacts.component.LibraryComponentIdentifier;
+import org.gradle.api.artifacts.component.LibraryBinaryIdentifier;
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
 import org.gradle.api.tasks.TaskDependency;
-import org.gradle.internal.component.local.model.DefaultLibraryComponentIdentifier;
+import org.gradle.internal.component.local.model.DefaultLibraryBinaryIdentifier;
 import org.gradle.internal.component.local.model.DefaultLocalComponentMetaData;
 
 import java.util.Collections;
@@ -33,17 +33,16 @@ public class DefaultLibraryLocalComponentMetaData extends DefaultLocalComponentM
         super(id, componentIdentifier, Project.DEFAULT_STATUS);
     }
 
-    public static DefaultLibraryLocalComponentMetaData newMetaData(String projectPath, String libraryName, TaskDependency buildDependencies) {
+    public static DefaultLibraryLocalComponentMetaData newMetaData(LibraryBinaryIdentifier componentId, TaskDependency buildDependencies) {
         ModuleVersionIdentifier id = new DefaultModuleVersionIdentifier(
-            projectPath, libraryName, VERSION
+            componentId.getProjectPath(), componentId.getLibraryName(), VERSION
         );
-        ComponentIdentifier component = new DefaultLibraryComponentIdentifier(projectPath, libraryName);
-        DefaultLibraryLocalComponentMetaData metaData = new DefaultLibraryLocalComponentMetaData(id, component);
+        DefaultLibraryLocalComponentMetaData metaData = new DefaultLibraryLocalComponentMetaData(id, componentId);
         metaData.addConfiguration(
-            LibraryComponentIdentifier.API_CONFIGURATION_NAME,
-            String.format("Configuration for %s", libraryName),
+            DefaultLibraryBinaryIdentifier.CONFIGURATION_NAME,
+            String.format("Request metadata: %s", componentId.getDisplayName()),
             Collections.<String>emptySet(),
-            Collections.singleton(LibraryComponentIdentifier.API_CONFIGURATION_NAME),
+            Collections.singleton(DefaultLibraryBinaryIdentifier.CONFIGURATION_NAME),
             true,
             true,
             buildDependencies);

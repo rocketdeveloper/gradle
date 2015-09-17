@@ -16,17 +16,13 @@
 
 package org.gradle.model.internal.manage.schema.extract;
 
-import com.google.common.collect.ImmutableList;
 import net.jcip.annotations.ThreadSafe;
-import org.gradle.api.Action;
-import org.gradle.api.Named;
-import org.gradle.model.Managed;
 import org.gradle.model.ModelMap;
+import org.gradle.model.internal.manage.schema.ModelCollectionSchema;
 import org.gradle.model.internal.manage.schema.ModelSchema;
-import org.gradle.model.internal.manage.schema.cache.ModelSchemaCache;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.type.ModelType;
 
-import java.util.Collections;
 import java.util.List;
 
 @ThreadSafe
@@ -37,7 +33,7 @@ public class ModelMapStrategy implements ModelSchemaExtractionStrategy {
 
     // TODO extract common stuff from this and ModelSet and reuse
 
-    public <T> ModelSchemaExtractionResult<T> extract(ModelSchemaExtractionContext<T> extractionContext, final ModelSchemaCache cache) {
+    public <T> void extract(ModelSchemaExtractionContext<T> extractionContext, ModelSchemaStore store) {
         ModelType<T> type = extractionContext.getType();
         if (MODEL_MAP_MODEL_TYPE.isAssignableFrom(type)) {
             if (!type.getRawClass().equals(ModelMap.class)) {
@@ -58,34 +54,14 @@ public class ModelMapStrategy implements ModelSchemaExtractionStrategy {
                 throw new InvalidManagedModelElementTypeException(extractionContext, String.format("%1$s cannot be used as type parameter of %1$s.", ModelMap.class.getName()));
             }
 
-            ModelSchema<T> schema = ModelSchema.collection(extractionContext.getType(), elementType);
-            ModelSchemaExtractionContext<?> typeParamExtractionContext = extractionContext.child(elementType, "element type", new Action<ModelSchemaExtractionContext<?>>() {
-                public void execute(ModelSchemaExtractionContext<?> context) {
-                    ModelType<?> elementType = context.getType();
-                    ModelSchema<?> typeParamSchema = cache.get(elementType);
-
-                    if (!typeParamSchema.getKind().isManaged()) {
-                        throw new InvalidManagedModelElementTypeException(context.getParent(), String.format(
-                            "cannot create a model map of type %s as it is not a %s type.",
-                            elementType, Managed.class.getName()
-                        ));
-                    }
-
-                    if (!Named.class.isAssignableFrom(elementType.getRawClass())) {
-                        throw new InvalidManagedModelElementTypeException(context.getParent(), String.format(
-                            "cannot create a model map of type %s as it does not implement %s.",
-                            elementType, Named.class.getName()
-                        ));
-                    }
-                }
-            });
-            return new ModelSchemaExtractionResult<T>(schema, ImmutableList.of(typeParamExtractionContext));
-        } else {
-            return null;
+            extractionContext.found(getModelSchema(extractionContext, elementType));
         }
     }
 
-    public Iterable<String> getSupportedManagedTypes() {
-        return Collections.singleton(MODEL_MAP_MODEL_TYPE + " of a managed type");
+    private <T, E> ModelSchema<T> getModelSchema(ModelSchemaExtractionContext<T> extractionContext, ModelType<E> elementType) {
+        ModelCollectionSchema<T, E> schema = new ModelCollectionSchema<T, E>(extractionContext.getType(), elementType);
+        extractionContext.child(elementType, "element type");
+        return schema;
     }
+
 }

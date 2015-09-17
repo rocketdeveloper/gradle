@@ -22,10 +22,10 @@ import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
-@LeaksFileHandles
 class BinaryBuildTypesIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def helloWorldApp = new CppHelloWorldApp()
 
+    @LeaksFileHandles("can't delete build/binaries/mainExecutable/integration")
     def "creates debug and release variants"() {
         when:
         helloWorldApp.writeSources(file("src/main"))
@@ -88,6 +88,7 @@ model {
         }
     }
 
+    @LeaksFileHandles
     def "configure component for a single build type"() {
         when:
         helloWorldApp.writeSources(file("src/main"))
@@ -121,6 +122,7 @@ model {
     }
 
     @Requires(TestPrecondition.CAN_INSTALL_EXECUTABLE)
+    @LeaksFileHandles
     def "executable with build type depends on library with matching build type"() {
         when:
         helloWorldApp.executable.writeSources(file("src/main"))
@@ -177,7 +179,7 @@ model {
         fails "mainExecutable"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: org.gradle.nativeplatform.plugins.NativeComponentModelPlugin\$Rules#createNativeBinaries(")
+        failure.assertHasCause("Exception thrown while executing model rule: NativeComponentRules#createBinaries")
         failure.assertHasCause("Invalid BuildType: 'unknown'")
     }
 

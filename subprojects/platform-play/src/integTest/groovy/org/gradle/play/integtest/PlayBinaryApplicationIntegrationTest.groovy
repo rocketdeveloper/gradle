@@ -16,9 +16,7 @@
 
 package org.gradle.play.integtest
 
-import org.gradle.integtests.fixtures.executer.GradleHandle
 import org.gradle.play.integtest.fixtures.PlayMultiVersionRunApplicationIntegrationTest
-import org.gradle.util.TextUtil
 
 abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunApplicationIntegrationTest {
 
@@ -48,19 +46,17 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
 
     def "can run play app"() {
         setup:
+        run "assemble"
         buildFile << """
             model {
                 tasks.runPlayBinary {
-                    httpPort = ${runningApp.selectPort()}
+                    httpPort = 0
                 }
             }
         """
-        run "assemble"
 
         when:
-        def userInput = new PipedOutputStream();
-        executer.withStdIn(new PipedInputStream(userInput))
-        GradleHandle gradleHandle = executer.withTasks("runPlayBinary").start()
+        startBuild "runPlayBinary"
 
         then:
         runningApp.verifyStarted()
@@ -69,10 +65,7 @@ abstract class PlayBinaryApplicationIntegrationTest extends PlayMultiVersionRunA
         runningApp.verifyContent()
 
         when: "stopping gradle"
-        userInput.write(4) // ctrl+d
-        userInput.write(TextUtil.toPlatformLineSeparators("\n").bytes) // For some reason flush() doesn't get the keystroke to the DaemonExecuter
-
-        gradleHandle.waitForFinish()
+        build.cancelWithEOT().waitForFinish()
 
         then: "play server is stopped too"
         runningApp.verifyStopped()

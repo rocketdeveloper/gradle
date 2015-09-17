@@ -31,6 +31,7 @@ class DefaultBuildActionExecuter<T> extends AbstractLongRunningOperation<Default
 
     public DefaultBuildActionExecuter(BuildAction<T> buildAction, AsyncConsumerActionExecutor connection, ConnectionParameters parameters) {
         super(parameters);
+        operationParamsBuilder.setEntryPoint("BuildActionExecuter API");
         this.buildAction = buildAction;
         this.connection = connection;
     }
@@ -55,7 +56,6 @@ class DefaultBuildActionExecuter<T> extends AbstractLongRunningOperation<Default
 
                            public T run(ConsumerConnection connection) {
                                T result = connection.run(buildAction, operationParameters);
-                               operationParameters.getBuildProgressListener().rethrowErrors();
                                return result;
                            }
                        }, new ResultHandlerAdapter<T>(handler) {

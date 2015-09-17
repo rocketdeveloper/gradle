@@ -16,70 +16,70 @@
 
 package org.gradle.model.internal.manage.schema.extract;
 
-import com.google.common.collect.ImmutableList;
 import net.jcip.annotations.ThreadSafe;
-import org.gradle.api.Action;
-import org.gradle.internal.Factory;
 import org.gradle.model.ModelSet;
-import org.gradle.model.internal.manage.schema.ModelSchema;
-import org.gradle.model.internal.manage.schema.cache.ModelSchemaCache;
+import org.gradle.model.internal.core.*;
+import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
+import org.gradle.model.internal.inspect.ManagedChildNodeCreatorStrategy;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.type.ModelType;
-
-import java.util.Collections;
-import java.util.List;
+import org.gradle.model.internal.type.ModelTypes;
 
 @ThreadSafe
-public class ModelSetStrategy implements ModelSchemaExtractionStrategy {
+public class ModelSetStrategy extends SetStrategy {
 
-    private static final ModelType<ModelSet<?>> MODEL_SET_MODEL_TYPE = new ModelType<ModelSet<?>>() {
-    };
-    private final Factory<String> supportedTypeDescriptions;
-
-    public ModelSetStrategy(Factory<String> supportedTypeDescriptions) {
-        this.supportedTypeDescriptions = supportedTypeDescriptions;
+    public ModelSetStrategy() {
+        super(new ModelType<ModelSet<?>>() {
+        });
     }
 
-    public <T> ModelSchemaExtractionResult<T> extract(ModelSchemaExtractionContext<T> extractionContext, final ModelSchemaCache cache) {
-        ModelType<T> type = extractionContext.getType();
-        if (MODEL_SET_MODEL_TYPE.isAssignableFrom(type)) {
-            if (!type.getRawClass().equals(ModelSet.class)) {
-                throw new InvalidManagedModelElementTypeException(extractionContext, String.format("subtyping %s is not supported", ModelSet.class.getName()));
+    @Override
+    protected <E> ModelProjection getProjection(ModelType<E> elementType, ModelSchemaStore schemaStore, NodeInitializerRegistry nodeInitializerRegistry) {
+        return TypedModelProjection.of(
+            ModelTypes.modelSet(elementType),
+            new ModelSetModelViewFactory<E>(elementType, schemaStore, nodeInitializerRegistry)
+        );
+    }
+
+    private static class ModelSetModelViewFactory<T> implements ModelViewFactory<ModelSet<T>> {
+        private final ModelType<T> elementType;
+        private final ModelSchemaStore store;
+        private final NodeInitializerRegistry nodeInitializerRegistry;
+
+        public ModelSetModelViewFactory(ModelType<T> elementType, ModelSchemaStore store, NodeInitializerRegistry nodeInitializerRegistry) {
+            this.elementType = elementType;
+            this.store = store;
+            this.nodeInitializerRegistry = nodeInitializerRegistry;
+        }
+
+        @Override
+        public ModelView<ModelSet<T>> toView(MutableModelNode modelNode, ModelRuleDescriptor ruleDescriptor, boolean writable) {
+            ModelType<ModelSet<T>> setType = ModelTypes.modelSet(elementType);
+            DefaultModelViewState state = new DefaultModelViewState(setType, ruleDescriptor, writable, !writable);
+            final ManagedChildNodeCreatorStrategy<T> childCreator = new ManagedChildNodeCreatorStrategy<T>(nodeInitializerRegistry);
+            NodeBackedModelSet<T> set = new NodeBackedModelSet<T>(setType.toString() + " '" + modelNode.getPath() + "'", elementType, ruleDescriptor, modelNode, state, childCreator);
+            return InstanceModelView.of(modelNode.getPath(), setType, set, state.closer());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
             }
-            if (type.isHasWildcardTypeVariables()) {
-                throw new InvalidManagedModelElementTypeException(extractionContext, String.format("type parameter of %s cannot be a wildcard", ModelSet.class.getName()));
+            if (o == null || getClass() != o.getClass()) {
+                return false;
             }
 
-            List<ModelType<?>> typeVariables = type.getTypeVariables();
-            if (typeVariables.isEmpty()) {
-                throw new InvalidManagedModelElementTypeException(extractionContext, String.format("type parameter of %s has to be specified", ModelSet.class.getName()));
-            }
+            ModelSetModelViewFactory<?> that = (ModelSetModelViewFactory<?>) o;
+            return elementType.equals(that.elementType);
 
-            ModelType<?> elementType = typeVariables.get(0);
+        }
 
-            if (MODEL_SET_MODEL_TYPE.isAssignableFrom(elementType)) {
-                throw new InvalidManagedModelElementTypeException(extractionContext, String.format("%1$s cannot be used as type parameter of %1$s", ModelSet.class.getName()));
-            }
-
-            ModelSchema<T> schema = ModelSchema.collection(extractionContext.getType(), elementType);
-            ModelSchemaExtractionContext<?> typeParamExtractionContext = extractionContext.child(elementType, "element type", new Action<ModelSchemaExtractionContext<?>>() {
-                public void execute(ModelSchemaExtractionContext<?> context) {
-                    ModelSchema<?> typeParamSchema = cache.get(context.getType());
-
-                    if (!typeParamSchema.getKind().isManaged()) {
-                        throw new InvalidManagedModelElementTypeException(context.getParent(), String.format(
-                                "cannot create a managed set of type %s as it is an unmanaged type.%nSupported types:%n%s",
-                                context.getType(), supportedTypeDescriptions.create()
-                        ));
-                    }
-                }
-            });
-            return new ModelSchemaExtractionResult<T>(schema, ImmutableList.of(typeParamExtractionContext));
-        } else {
-            return null;
+        @Override
+        public int hashCode() {
+            return elementType.hashCode();
         }
     }
 
-    public Iterable<String> getSupportedManagedTypes() {
-        return Collections.singleton(MODEL_SET_MODEL_TYPE + " of a managed type");
-    }
+
 }

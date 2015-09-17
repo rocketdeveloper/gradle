@@ -16,6 +16,7 @@
 
 package org.gradle.model
 
+import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.util.TextUtil
 
@@ -229,7 +230,7 @@ class TaskCreationIntegrationTest extends AbstractIntegrationSpec {
         fails "bar"
 
         then:
-        failure.assertHasCause('Exception thrown while executing model rule: MyPlugin#checkTask(MessageTask)')
+        failure.assertHasCause('Exception thrown while executing model rule: MyPlugin#checkTask')
         failure.assertHasCause('task is invalid!')
     }
 
@@ -498,8 +499,8 @@ foo configured
         fails "tasks"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks2(org.gradle.model.ModelMap<org.gradle.api.Task>, MyModel)")
-        failure.assertHasCause("Cannot create 'tasks.a' using creation rule 'MyPlugin#addTasks2(org.gradle.model.ModelMap<org.gradle.api.Task>, MyModel) > create(a)' as the rule 'MyPlugin#addTasks1(org.gradle.model.ModelMap<org.gradle.api.Task>, MyModel) > create(a)' is already registered to create this model element.")
+        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks2")
+        failure.assertHasCause("Cannot create 'tasks.a' using creation rule 'MyPlugin#addTasks2 > create(a)' as the rule 'MyPlugin#addTasks1 > create(a)' is already registered to create this model element.")
     }
 
     def "cannot create tasks during config of task"() {
@@ -521,8 +522,8 @@ foo configured
         fails "tasks"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks(org.gradle.model.ModelMap<org.gradle.api.Task>) > foo.<init>")
-        failure.assertHasCause("Attempt to mutate closed view of model of type 'org.gradle.model.ModelMap<org.gradle.api.Task>' given to rule 'MyPlugin#addTasks(org.gradle.model.ModelMap<org.gradle.api.Task>)'")
+        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks > create(foo)")
+        failure.assertHasCause("Attempt to mutate closed view of model of type 'org.gradle.model.ModelMap<org.gradle.api.Task>' given to rule 'MyPlugin#addTasks'")
     }
 
     def "failure during task instantiation is reasonably reported"() {
@@ -548,7 +549,7 @@ foo configured
         fails "tasks"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks(org.gradle.model.ModelMap<org.gradle.api.Task>)")
+        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks > create(foo)")
         failure.assertHasCause("Could not create task of type 'Faulty'")
     }
 
@@ -571,7 +572,7 @@ foo configured
         fails "tasks"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks(org.gradle.model.ModelMap<org.gradle.api.Task>)")
+        failure.assertHasCause("Exception thrown while executing model rule: MyPlugin#addTasks")
         failure.assertHasCause("config failure")
     }
 
@@ -655,7 +656,7 @@ foo configured
         fails "foo"
 
         and:
-        failure.assertHasCause("Cannot create 'tasks.foo' using creation rule 'MyPlugin#addTask(org.gradle.model.ModelMap<org.gradle.api.Task>) > create(foo)' as the rule 'Project.<init>.tasks.foo()' is already registered to create this model element.")
+        failure.assertHasCause("Cannot create 'tasks.foo' using creation rule 'MyPlugin#addTask > create(foo)' as the rule 'Project.<init>.tasks.foo()' is already registered to create this model element.")
     }
 
     def "can create task with invalid model space name"() {
@@ -668,5 +669,39 @@ foo configured
 
         then:
         ":." in executedTasks
+    }
+
+    def "proxy classes are never used as task instance nodes types"(){
+        given:
+        buildFile << """
+tasks.create(name: 'taskContainerTask', type: DefaultTask) { }
+
+task standardTask << {}
+
+model {
+  tasks {
+    newModelTask(Task) {}
+  }
+}
+
+class MyPlugin extends RuleSource {
+    @Mutate
+    void addTasks(ModelMap<Task> tasks) {
+        tasks.create('modelMapTask') {}
+    }
+}
+apply type: MyPlugin
+"""
+
+        when:
+        succeeds("model")
+
+        then:
+        def tasksNode = ModelReportOutput.from(output).modelNode.tasks
+        tasksNode.taskContainerTask.@type[0] == 'org.gradle.api.DefaultTask'
+        tasksNode.standardTask.@type[0] == 'org.gradle.api.DefaultTask'
+        tasksNode.newModelTask.@type[0] == 'org.gradle.api.Task'
+        tasksNode.modelMapTask.@type[0] == 'org.gradle.api.Task'
+        tasksNode.model.@type[0] == 'org.gradle.api.reporting.model.ModelReport' //Placeholder task
     }
 }

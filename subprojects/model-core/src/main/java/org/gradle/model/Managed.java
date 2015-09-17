@@ -46,6 +46,13 @@ import java.lang.annotation.Target;
  * A getter and setter must be declared for each property that is not of a managed type or of {@link ModelSet}.
  * For properties of managed types or of {@link ModelSet} the getter is mandatory and the setter is optional.
  * If no setter is provided the property is considered inherent and defaults to an "empty" instance of the type.
+ * In addition to the traditional getter method, properties of type <pre>boolean</pre> (but not <pre>Boolean</pre>)
+ * also support a getter method which name starts with <pre>is</pre>:
+ *
+ * <pre>
+ * void setEnabled(boolean enabled);
+ * boolean isEnabed();
+ * </pre>
  *
  * <h4>Supported property types</h4>
  * <p>
@@ -54,15 +61,18 @@ import java.lang.annotation.Target;
  * <li>{@link String}</li>
  * <li>{@link Boolean}</li>
  * <li>{@link Character}</li>
+ * <li>{@link Byte}</li>
+ * <li>{@link Short}</li>
  * <li>{@link Integer}</li>
  * <li>{@link Long}</li>
+ * <li>{@link Float}</li>
  * <li>{@link Double}</li>
  * <li>{@link java.math.BigInteger}</li>
  * <li>{@link java.math.BigDecimal}</li>
  * <li>{@link java.io.File}</li>
  * </ul>
  * <p>
- * All {@link Enum} types are also allowed.
+ * All primitive types and {@link Enum} types are also allowed.
  * <p>
  * Properties that are themselves of a managed type are also supported.
  * <p>

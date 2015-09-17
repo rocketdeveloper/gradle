@@ -46,8 +46,17 @@ class ModelReuseIntegrationTest extends DaemonIntegrationSpec {
             }
         """
 
+        file("src/main/java/Thing.java") << "class Thing {}"
+
         then:
         succeeds "build"
+        executedAndNotSkipped ":compileMainJarMainJava"
+
+        when:
+        file("src/main/java/Thing.java").text = "class Thing { static int foo = 1; }"
+
+        then:
         succeeds "build"
+        executedAndNotSkipped ":compileMainJarMainJava"
     }
 }

@@ -15,22 +15,23 @@
  */
 
 package org.gradle.integtests.tooling.r25
-
 import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.executer.GradleVersions
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
 import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.integtests.tooling.fixture.ToolingApiVersions
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.util.Requires
 
 @ToolingApiVersion(ToolingApiVersions.SUPPORTS_CANCELLATION)
 @TargetGradleVersion(GradleVersions.SUPPORTS_CONTINUOUS)
 @Requires(adhoc = { AvailableJavaHomes.jdk6 })
+@LeaksFileHandles
 class ContinuousUnsupportedJavaVersionCrossVersionSpec extends ToolingApiSpecification {
 
-    def "client receives appropriate error if continuous build attempted on unsupported platform"() {
+    def "client receives error on unsupported platform"() {
         given:
         toolingApi.requireIsolatedDaemons()
         buildFile.text = "apply plugin: 'java'"
@@ -46,6 +47,7 @@ class ContinuousUnsupportedJavaVersionCrossVersionSpec extends ToolingApiSpecifi
 
         then:
         def e = thrown(GradleConnectionException)
+        e.message.startsWith("Could not execute build using")
         e.cause.message == 'Continuous build requires Java 7 or later.'
     }
 

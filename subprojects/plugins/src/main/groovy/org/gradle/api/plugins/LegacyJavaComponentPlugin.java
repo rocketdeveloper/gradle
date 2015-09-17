@@ -35,7 +35,6 @@ import org.gradle.language.jvm.JvmResourceSet;
 import org.gradle.language.jvm.tasks.ProcessResources;
 import org.gradle.platform.base.BinaryContainer;
 import org.gradle.platform.base.internal.BinaryNamingScheme;
-import org.gradle.platform.base.internal.toolchain.ToolResolver;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -55,14 +54,12 @@ public class LegacyJavaComponentPlugin implements Plugin<Project> {
     private final Instantiator instantiator;
     private final JavaToolChain toolChain;
     private final ITaskFactory taskFactory;
-    private final ToolResolver toolResolver;
 
     @Inject
-    public LegacyJavaComponentPlugin(Instantiator instantiator, JavaToolChain toolChain, ITaskFactory taskFactory, ToolResolver toolResolver) {
+    public LegacyJavaComponentPlugin(Instantiator instantiator, JavaToolChain toolChain, ITaskFactory taskFactory) {
         this.instantiator = instantiator;
         this.toolChain = toolChain;
         this.taskFactory = taskFactory;
-        this.toolResolver = toolResolver;
     }
 
     public void apply(final Project target) {
@@ -71,7 +68,7 @@ public class LegacyJavaComponentPlugin implements Plugin<Project> {
         BinaryContainer binaryContainer = target.getExtensions().getByType(BinaryContainer.class);
         binaryContainer.registerFactory(ClassDirectoryBinarySpec.class, new NamedDomainObjectFactory<ClassDirectoryBinarySpec>() {
             public ClassDirectoryBinarySpec create(String name) {
-                return instantiator.newInstance(DefaultClassDirectoryBinarySpec.class, name, toolChain, new DefaultJavaPlatform(JavaVersion.current()), instantiator, taskFactory, toolResolver);
+                return instantiator.newInstance(DefaultClassDirectoryBinarySpec.class, name, toolChain, DefaultJavaPlatform.current(), instantiator, taskFactory);
             }
         });
 
@@ -97,7 +94,7 @@ public class LegacyJavaComponentPlugin implements Plugin<Project> {
 
     private void createCompileJavaTaskForBinary(final ClassDirectoryBinarySpecInternal binary, final Project target) {
         final BinaryNamingScheme namingScheme = binary.getNamingScheme();
-        binary.getSource().withType(JavaSourceSet.class).all(new Action<JavaSourceSet>() {
+        binary.getInputs().withType(JavaSourceSet.class).all(new Action<JavaSourceSet>() {
             public void execute(JavaSourceSet javaSourceSet) {
                 JavaCompile compileTask = target.getTasks().create(namingScheme.getTaskName("compile", "java"), JavaCompile.class);
                 configureCompileTask(compileTask, javaSourceSet, binary);
@@ -109,7 +106,7 @@ public class LegacyJavaComponentPlugin implements Plugin<Project> {
 
     private void createProcessResourcesTaskForBinary(final ClassDirectoryBinarySpecInternal binary, final Project target) {
         final BinaryNamingScheme namingScheme = binary.getNamingScheme();
-        binary.getSource().withType(JvmResourceSet.class).all(new Action<JvmResourceSet>() {
+        binary.getInputs().withType(JvmResourceSet.class).all(new Action<JvmResourceSet>() {
             public void execute(JvmResourceSet resourceSet) {
                 Copy resourcesTask = target.getTasks().create(namingScheme.getTaskName("process", "resources"), ProcessResources.class);
                 resourcesTask.setDescription(String.format("Processes %s.", resourceSet));

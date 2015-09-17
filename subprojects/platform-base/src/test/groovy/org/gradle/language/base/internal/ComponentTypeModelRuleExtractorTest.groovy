@@ -15,12 +15,14 @@
  */
 
 package org.gradle.language.base.internal
-
+import org.gradle.language.base.internal.testinterfaces.NotComponentSpec
+import org.gradle.language.base.internal.testinterfaces.SomeComponentSpec
 import org.gradle.language.base.plugins.ComponentModelBasePlugin
 import org.gradle.model.InvalidModelRuleDeclarationException
 import org.gradle.model.internal.core.ExtractedModelRule
 import org.gradle.model.internal.core.ModelActionRole
 import org.gradle.model.internal.core.ModelReference
+import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
 import org.gradle.model.internal.type.ModelType
 import org.gradle.platform.base.*
 import org.gradle.platform.base.component.BaseComponentSpec
@@ -33,7 +35,7 @@ import java.lang.annotation.Annotation
 
 class ComponentTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExtractorTest {
     final static ModelType<ComponentSpecFactory> FACTORY_REGISTRY_TYPE = ModelType.of(ComponentSpecFactory)
-    ComponentTypeModelRuleExtractor ruleHandler = new ComponentTypeModelRuleExtractor()
+    ComponentTypeModelRuleExtractor ruleHandler = new ComponentTypeModelRuleExtractor(DefaultModelSchemaStore.getInstance())
 
     @Override
     Class<? extends Annotation> getAnnotation() { return ComponentType }
@@ -91,13 +93,11 @@ class ComponentTypeModelRuleExtractorTest extends AbstractAnnotationModelRuleExt
         "noDefaultConstructor"             | "Component implementation '${NoDefaultConstructor.name}' must have public default constructor."                         | "implementation with no public default constructor"
     }
 
-    interface SomeComponentSpec extends ComponentSpec {}
+
 
     static class SomeComponentSpecImpl extends BaseComponentSpec implements SomeComponentSpec {}
 
     static class SomeComponentSpecOtherImpl extends SomeComponentSpecImpl {}
-
-    interface NotComponentSpec {}
 
     static class NotImplementingCustomComponent extends BaseComponentSpec implements ComponentSpec {}
 

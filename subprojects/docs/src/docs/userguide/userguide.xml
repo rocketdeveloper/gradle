@@ -77,11 +77,13 @@
     <xi:include href='wrapperPlugin.xml'/>
     <xi:include href='buildDashboardPlugin.xml'/>
     <xi:include href='javaGradlePlugin.xml' />
+    <xi:include href='testKit.xml' />
     <xi:include href='depMngmt.xml'/>
     <xi:include href='artifactMngmt.xml'/>
     <xi:include href='mavenPlugin.xml'/>
     <xi:include href='signingPlugin.xml'/>
     <xi:include href='nativeBinaries.xml'/>
+    <xi:include href='playPlugin.xml'/>
     <xi:include href='buildLifecycle.xml'/>
     <xi:include href='multiproject.xml'/>
     <xi:include href='customTasks.xml'/>
@@ -94,6 +96,7 @@
     <xi:include href='publishingIvy.xml'/>
     <xi:include href='publishingMaven.xml'/>
     <xi:include href='newModel.xml'/>
+    <xi:include href='buildingJavaLibraries.xml'/>
     <!-- this is generated -->
     <xi:include href='../../../build/src/samplesList.xml'/>
     <xi:include href='potentialTraps.xml'/>

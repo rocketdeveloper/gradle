@@ -25,10 +25,10 @@ import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.api.internal.artifacts.ModuleVersionPublisher;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ConfiguredModuleComponentRepository;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.DependencyResolverIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ModuleComponentRepositoryAccess;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolverProvider;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.DescriptorParseContext;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParseException;
 import org.gradle.api.internal.component.ArtifactType;
@@ -59,7 +59,7 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     private List<ResourcePattern> ivyPatterns = new ArrayList<ResourcePattern>();
     private List<ResourcePattern> artifactPatterns = new ArrayList<ResourcePattern>();
     private String name;
-    private ResolverProvider resolverProvider;
+    private ComponentResolvers componentResolvers;
 
     private final ExternalResourceRepository repository;
     private final boolean local;
@@ -101,8 +101,8 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
         return false;
     }
 
-    public void setResolverProvider(ResolverProvider resolver) {
-        this.resolverProvider = resolver;
+    public void setComponentResolvers(ComponentResolvers resolver) {
+        this.componentResolvers = resolver;
     }
 
     protected ExternalResourceRepository getRepository() {
@@ -161,12 +161,12 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     @Nullable
     protected MutableModuleComponentResolveMetaData parseMetaDataFromArtifact(ModuleComponentIdentifier moduleComponentIdentifier, ExternalResourceArtifactResolver artifactResolver, ResourceAwareResolveResult result) {
         ModuleComponentArtifactMetaData artifact = getMetaDataArtifactFor(moduleComponentIdentifier);
-        LocallyAvailableExternalResource metaDataResource = artifactResolver.resolveMetaDataArtifact(artifact, result);
+        LocallyAvailableExternalResource metaDataResource = artifactResolver.resolveArtifact(artifact, result);
         if (metaDataResource == null) {
             return null;
         }
 
-        ExternalResourceResolverDescriptorParseContext context = new ExternalResourceResolverDescriptorParseContext(resolverProvider);
+        ExternalResourceResolverDescriptorParseContext context = new ExternalResourceResolverDescriptorParseContext(componentResolvers);
         return parseMetaDataFromResource(moduleComponentIdentifier, metaDataResource, context);
     }
 
@@ -222,9 +222,10 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
         return Collections.emptySet();
     }
 
-    private ModuleComponentArtifactMetaData getMetaDataArtifactFor(ModuleComponentIdentifier moduleComponentIdentifier) {
+    private ModuleDescriptorArtifactMetaData getMetaDataArtifactFor(ModuleComponentIdentifier moduleComponentIdentifier) {
         IvyArtifactName ivyArtifactName = getMetaDataArtifactName(moduleComponentIdentifier.getModule());
-        return new DefaultModuleComponentArtifactMetaData(moduleComponentIdentifier, ivyArtifactName);
+        DefaultModuleComponentArtifactMetaData defaultModuleComponentArtifactMetaData = new DefaultModuleComponentArtifactMetaData(moduleComponentIdentifier, ivyArtifactName);
+        return new DefaultModuleDescriptorArtifactMetaData(defaultModuleComponentArtifactMetaData);
     }
 
     protected abstract IvyArtifactName getMetaDataArtifactName(String moduleName);
@@ -385,7 +386,7 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
         }
 
         protected final void resolveMetaDataArtifacts(ModuleComponentResolveMetaData module, BuildableArtifactSetResolveResult result) {
-            ModuleComponentArtifactMetaData artifact = getMetaDataArtifactFor(module.getComponentId());
+            ModuleDescriptorArtifactMetaData artifact = getMetaDataArtifactFor(module.getComponentId());
             result.resolved(Collections.singleton(artifact));
         }
 

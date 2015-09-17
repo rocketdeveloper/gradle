@@ -15,7 +15,9 @@
  */
 package org.gradle.nativeplatform
 
+import org.gradle.integtests.fixtures.EnableModelDsl
 import org.gradle.integtests.fixtures.Sample
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.test.fixtures.file.LeaksFileHandles
@@ -39,6 +41,7 @@ class NativePlatformSamplesIntegrationTest extends AbstractInstalledToolChainInt
     @Rule public final Sample toolChains = sample(testDirProvider, 'tool-chains')
     @Rule public final Sample prebuilt = sample(testDirProvider, 'prebuilt')
     @Rule public final Sample targetPlatforms = sample(testDirProvider, 'target-platforms')
+    @Rule public final Sample sourcesetVariant = sample(testDirectoryProvider, "sourceset-variant")
 
     private static Sample sample(TestDirectoryProvider testDirectoryProvider, String name) {
         return new Sample(testDirectoryProvider, "native-binaries/${name}", name)
@@ -53,6 +56,7 @@ class NativePlatformSamplesIntegrationTest extends AbstractInstalledToolChainInt
         sample cppExe
 
         when:
+        EnableModelDsl.enable(executer)
         run "installMain"
 
         then:
@@ -238,5 +242,31 @@ Util build type: DEBUG
 """Built with Boost version: 1_55
 Util build type: RELEASE
 """
+    }
+
+    def sourcesetvariant() {
+        given:
+        sample sourcesetVariant
+
+        final String platformName
+        if (OperatingSystem.current().isMacOsX()) {
+            platformName = "MacOSX"
+        } else if (OperatingSystem.current().isLinux()) {
+            platformName = "Linux"
+        } else if (OperatingSystem.current().isWindows()) {
+            platformName = "Windows"
+        } else {
+            platformName = "Unknown"
+        }
+
+        when:
+        run "installMainExecutable", "tasks"
+
+        then:
+        executedAndNotSkipped(":compileMainExecutableMainPlatform$platformName", ":installMainExecutable")
+
+        and:
+        executable(sourcesetVariant.dir.file("build/binaries/mainExecutable/main")).assertExists()
+        installation(sourcesetVariant.dir.file("build/install/mainExecutable")).exec().out.contains("Attributes of '$platformName' platform")
     }
 }

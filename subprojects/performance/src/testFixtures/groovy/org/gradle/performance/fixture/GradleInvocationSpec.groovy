@@ -15,7 +15,6 @@
  */
 
 package org.gradle.performance.fixture
-
 import com.google.common.collect.ImmutableList
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
@@ -31,16 +30,16 @@ class GradleInvocationSpec {
     final File workingDirectory
     final List<String> tasksToRun
     final List<String> args
-    final List<String> gradleOpts
+    final List<String> jvmOpts
     final boolean useDaemon
     final boolean useToolingApi
 
-    GradleInvocationSpec(GradleDistribution gradleDistribution, File workingDirectory, List<String> tasksToRun, List<String> args, List<String> gradleOpts, boolean useDaemon, boolean useToolingApi) {
+    GradleInvocationSpec(GradleDistribution gradleDistribution, File workingDirectory, List<String> tasksToRun, List<String> args, List<String> jvmOpts, boolean useDaemon, boolean useToolingApi) {
         this.gradleDistribution = gradleDistribution
         this.workingDirectory = workingDirectory
         this.tasksToRun = tasksToRun
         this.args = args
-        this.gradleOpts = gradleOpts
+        this.jvmOpts = jvmOpts
         this.useDaemon = useDaemon
         this.useToolingApi = useToolingApi
     }
@@ -49,22 +48,25 @@ class GradleInvocationSpec {
         return new Builder()
     }
 
-    GradleInvocationSpec withAdditionalGradleOpts(List<String> additionalGradleOpts) {
-        return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, args, ImmutableList.builder().addAll(gradleOpts).addAll(additionalGradleOpts).build(), useDaemon, useToolingApi)
+    GradleInvocationSpec withAdditionalJvmOpts(List<String> additionalJvmOpts) {
+        return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, args, ImmutableList.builder().addAll(jvmOpts).addAll(additionalJvmOpts).build(), useDaemon, useToolingApi)
     }
 
     GradleInvocationSpec withAdditionalArgs(List<String> additionalArgs) {
-        return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, ImmutableList.builder().addAll(args).addAll(additionalArgs).build(), gradleOpts, useDaemon, useToolingApi)
+        return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, ImmutableList.builder().addAll(args).addAll(additionalArgs).build(), jvmOpts, useDaemon, useToolingApi)
     }
 
     static class Builder {
+        Profiler profiler = new YourKitProfiler()
         GradleDistribution gradleDistribution
         File workingDirectory
         List<String> tasksToRun = []
         List<String> args = []
         List<String> gradleOptions = []
+        Map<String, Object> profilerOpts = [:]
         boolean useDaemon
         boolean useToolingApi
+        boolean useProfiler
 
         Builder distribution(GradleDistribution gradleDistribution) {
             this.gradleDistribution = gradleDistribution
@@ -102,6 +104,9 @@ class GradleInvocationSpec {
 
         Builder useToolingApi() {
             useToolingApi(true)
+            // Can't use tooling API with profiler yet
+            assert !isUseProfiler()
+            this
         }
 
         Builder useToolingApi(boolean flag) {
@@ -125,12 +130,40 @@ class GradleInvocationSpec {
             gradleOpts("-D${GradleProperties.WORKERS_PROPERTY}=1")
         }
 
+        Builder useProfiler() {
+            useProfiler = true
+            // Can't use tooling API with profiler yet
+            assert !isUseToolingApi()
+            this
+        }
+
+        Builder useProfiler(Profiler profiler) {
+            useProfiler()
+            this.profiler = profiler
+            this
+        }
+
+        Builder profilerOpts(Map<String, Object> profilerOpts) {
+            this.profilerOpts.putAll(profilerOpts)
+            this
+        }
+
+        Builder buildInfo(String displayName, String projectName) {
+            this.profilerOpts.put("sessionname", "$projectName $displayName".replace(' ', "_").toString())
+            this
+        }
+
         GradleInvocationSpec build() {
             assert gradleDistribution != null
             assert workingDirectory != null
 
-            return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun.asImmutable(), args.asImmutable(), gradleOptions.asImmutable(), useDaemon, useToolingApi)
-        }
+            profiler.addProfilerDefaults(this)
+            List<String> jvmOpts = gradleOptions
+            if (useProfiler) {
+                jvmOpts = gradleOptions + profiler.profilerArguments(profilerOpts)
+            }
 
+            return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun.asImmutable(), args.asImmutable(), jvmOpts.asImmutable(), useDaemon, useToolingApi)
+        }
     }
 }

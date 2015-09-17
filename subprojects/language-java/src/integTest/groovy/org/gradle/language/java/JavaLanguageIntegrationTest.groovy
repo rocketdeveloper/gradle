@@ -24,7 +24,6 @@ import org.gradle.language.fixtures.TestJavaComponent
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
-import org.hamcrest.Matchers
 
 @LeaksFileHandles
 class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
@@ -132,7 +131,7 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
 
     @Requires(TestPrecondition.JDK8_OR_EARLIER)
     def "builds all buildable and skips non-buildable platforms when assembling"() {
-        def current = new DefaultJavaPlatform(JavaVersion.current())
+        def current = DefaultJavaPlatform.current()
         when:
         app.sources*.writeToDir(file("src/myLib/java"))
 
@@ -171,11 +170,9 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
     }
 """
         then:
-        // TODO:DAZ Would like to use 'assemble' here, but it currently ignores non-buildable binaries
         fails "myLibJar"
 
         and:
-        failure.assertHasCause("No tool chains can provide a compiler for type DefaultJavaCompileSpec:")
-        failure.assertThatCause(Matchers.containsString("Could not target platform: 'Java SE 9' using tool chain: 'JDK ${JavaVersion.current().majorVersion} (${JavaVersion.current()})'"))
+        assert failure.assertHasCause("Could not target platform: 'Java SE 9' using tool chain: 'JDK ${JavaVersion.current().majorVersion} (${JavaVersion.current()})'")
     }
 }

@@ -24,7 +24,6 @@ import spock.lang.Unroll
 
 class ComponentModelIntegrationTest extends AbstractIntegrationSpec {
 
-
     def "setup"() {
         EnableModelDsl.enable(executer)
         buildScript """
@@ -126,6 +125,7 @@ class ComponentModelIntegrationTest extends AbstractIntegrationSpec {
             import org.gradle.language.base.internal.*
             import org.gradle.language.base.*
             import org.gradle.internal.reflect.*
+            import org.gradle.internal.service.*
 
 
             class CustomLanguageTransformation implements LanguageTransform {
@@ -151,7 +151,7 @@ class ComponentModelIntegrationTest extends AbstractIntegrationSpec {
                             DefaultTask
                         }
 
-                        void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet) {
+                        void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet, ServiceRegistry serviceRegistry) {
                         }
                     }
                 }
@@ -182,7 +182,8 @@ class Rules extends RuleSource {
     @Defaults
     void verifyAsContainer(ComponentSpecContainer c) {
         assert c.toString() == "ComponentSpecContainer 'components'"
-        assert c.toString() == c.withType(CustomComponent).toString()
+        assert c.withType(CustomComponent).toString() == "ModelMap<CustomComponent> 'components'"
+        assert !(c.withType(CustomComponent) instanceof ComponentSpecContainer)
     }
 
     @Defaults
@@ -478,7 +479,9 @@ model {
         succeeds "tasks"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""beforeEach DefaultCustomComponent 'newComponent'
+        output.contains(TextUtil.toPlatformLineSeparators("""beforeEach DefaultCustomComponent 'main'
+afterEach DefaultCustomComponent 'main'
+beforeEach DefaultCustomComponent 'newComponent'
 creating DefaultCustomComponent 'newComponent'
 afterEach DefaultCustomComponent 'newComponent'"""))
 
@@ -602,7 +605,9 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         succeeds "tasks"
 
         and:
-        output.contains(TextUtil.toPlatformLineSeparators("""beforeEach DefaultCustomComponent 'newComponent'
+        output.contains(TextUtil.toPlatformLineSeparators("""beforeEach DefaultCustomComponent 'main'
+afterEach DefaultCustomComponent 'main'
+beforeEach DefaultCustomComponent 'newComponent'
 creating DefaultCustomComponent 'newComponent'
 afterEach DefaultCustomComponent 'newComponent'"""))
 
@@ -652,7 +657,7 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         fails "model"
 
         and:
-        failureHasCause("Cannot create a DefaultCustomComponent because this type is not known to this collection. Known types are: CustomComponent")
+        failureHasCause("Cannot create a DefaultCustomComponent because this type is not registered")
     }
 
     def "reasonable error message when creating component with no implementation"() {
@@ -671,7 +676,7 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         fails "model"
 
         and:
-        failureHasCause("Cannot create a AnotherCustomComponent because this type is not known to this collection. Known types are: CustomComponent")
+        failureHasCause("Cannot create a AnotherCustomComponent because this type is not registered")
     }
 
     def "componentSpecContainer is groovy decorated when used in rules"() {
@@ -727,7 +732,7 @@ afterEach DefaultCustomComponent 'newComponent'"""))
         when:
         fails "tasks"
         then:
-        failureHasCause "Attempt to mutate closed view of model of type '$fullQualified' given to rule 'ComponentSpecContainerRules#addComponentTasks(org.gradle.api.tasks.TaskContainer, $fullQualified)'"
+        failureHasCause "Attempt to mutate closed view of model of type '$fullQualified' given to rule 'ComponentSpecContainerRules#addComponentTasks'"
 
         where:
         projectionType                     | fullQualified

@@ -9,6 +9,219 @@ This spec does not cover more general features such as improving dependency reso
 
 Below is a list of stories, in approximate priority order:
 
+## Feature -  Improve IDE project naming deduplication strategy
+
+### Motivation
+
+If we got a project structure like this:
+
+    :foo:app
+    :bar:app
+    :foobar:app
+
+it currently results in the following eclipse project names:
+
+    app
+    bar-app
+    foobar-app
+
+This behaviour can be quite confusing in the IDE. To make things clearer the deduplication strategy
+should be changed in a way that it results in:
+
+    foo-app
+    bar-app
+    foobar-app
+
+
+# Implementation Plan
+
+The general algorithm will look like this:
+
+1. if no duplicate of project name is found in the hierarchy, use the original name as IDE project name
+2. root project name keeps the original name in IDE
+3. for all non unique project names
+
+    3.1 the IDE project name candidate is changed to be _deduplicated_ `project.parent.name` + `-` + `project.name`
+
+    3.2 duplicate words in the IDE project name candidate are removed.( eg `gradle-gradle-core` becomes `gradle-core`
+
+    3.3 skip 3.2 for identical parent and child project name
+
+    3.4 repeat starting from 3.1 with all projects with non unique names yet
+
+4. deprecate setting ide project name in whenMerged/beforeMerged hook.
+
+# Test Coverage
+
+* _gradle eclipse_ / _gradle idea_ on root of multiproject with given project layout containing duplicate names:
+
+```
+    root
+    \- foo
+       \- app
+    \- bar
+       \- app
+```
+
+results in IDE project names
+
+```
+    root
+    \- foo
+       \- foo-app
+    \- bar
+       \- bar-app
+```
+* _gradle eclipse_ / _gradle idea_ on root of multiproject with given project layout containing with no duplicate names:
+
+```
+    root
+    \- foo
+       \- bar
+    \- foobar
+       \- app
+```
+
+results in IDE project names
+
+```
+    root
+    \- foo
+       \- bar
+    \- foobar
+       \- app
+```
+
+
+* explicit configured IDE project name take precedence over deduplication:
+    given
+
+```
+     root
+     \- foo
+        \- app
+           \-build.gradle // contains e.g. eclipse.project.name = "custom-app" / ideaModule.module.name = "custom-app"
+     \- bar
+        \- app
+```
+
+results in
+
+```
+     root
+     \- foo
+        \- custom-app
+     \- bar
+        \- app
+```
+
+
+* given project layout
+
+```
+    app
+    \- app
+    \- util
+```
+
+results in
+
+```
+    app
+    \- app-app
+    \- util
+```
+
+* given project layout
+
+```
+    root
+    \- app
+    \- services
+       \- bar
+          \- app
+```
+
+results in
+
+```
+    root
+    \- root-app
+    \- services
+       \- bar
+          \- bar-app
+```
+
+* given project layout
+
+```
+    root
+    |- foo-bar
+    |- foo
+    |  \- bar
+    \- baz
+       \- bar
+```
+
+results in
+
+```
+    root
+    \- foo-bar
+    \- foo
+       \- root-foo-bar
+    \- baz
+       \- root-baz-bar
+
+```
+
+
+* given project layout
+
+```
+    myproject
+    \- myproject-app
+    \- myproject-bar
+       \- myproject-app
+```
+
+results in
+
+```
+    myproject
+    \- myproject-app (instead of myproject-myproject-app)
+    \- myproject-bar
+       \- myproject-bar-app (instead of myproject-bar-myproject-app)
+```
+
+* deduplication logics works with deduplicated parent module name. given project layout:
+
+```
+   root
+    \- bar
+        \- services
+            \- rest
+    \- foo
+            \- services
+                \- rest
+```
+
+results in
+
+```
+    root
+    \- bar
+        \- bar-serivces
+            \- bar-services-rest
+    \- foo
+        \- foo-serivces
+            \- foo-services-rest
+```
+
+* setting ide project name within `whenMerged` results in a deprecation warning.
+* setting ide project name within `beforeMerged` results in a deprecation warning.
+* tests work with IDE gradle plugins and with IDE model queried via tooling api
+
 ## Feature - Tooling API parity with command-line for task visualisation and execution
 
 This feature exposes via the tooling API some task execution and reporting features that are currently available on the command-line.

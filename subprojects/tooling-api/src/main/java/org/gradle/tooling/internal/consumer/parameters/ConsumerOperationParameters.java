@@ -31,7 +31,11 @@ import org.gradle.tooling.model.Task;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.*;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class ConsumerOperationParameters implements BuildOperationParametersVersion1, BuildParametersVersion1, BuildParameters {
@@ -45,6 +49,7 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
         private final List<ProgressListener> testProgressListeners = new ArrayList<ProgressListener>();
         private final List<ProgressListener> taskProgressListeners = new ArrayList<ProgressListener>();
         private final List<ProgressListener> buildOperationProgressListeners = new ArrayList<ProgressListener>();
+        private String entryPoint;
         private CancellationToken cancellationToken;
         private ConnectionParameters parameters;
         private OutputStream stdout;
@@ -56,8 +61,14 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
         private List<String> arguments;
         private List<String> tasks;
         private List<InternalLaunchable> launchables;
+        private List<URI> classpath;
 
         private Builder() {
+        }
+
+        public Builder setEntryPoint(String entryPoint) {
+            this.entryPoint = entryPoint;
+            return this;
         }
 
         public Builder setParameters(ConnectionParameters parameters) {
@@ -91,13 +102,13 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
             return this;
         }
 
-        public Builder setJvmArguments(String... jvmArguments) {
-            this.jvmArguments = rationalizeInput(jvmArguments);
+        public Builder setJvmArguments(List<String> jvmArguments) {
+            this.jvmArguments = jvmArguments;
             return this;
         }
 
-        public Builder setArguments(String[] arguments) {
-            this.arguments = rationalizeInput(arguments);
+        public Builder setArguments(List<String> arguments) {
+            this.arguments = arguments;
             return this;
         }
 
@@ -130,6 +141,11 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
             return this;
         }
 
+        public Builder setClasspath(List<URI> classpath) {
+            this.classpath = classpath;
+            return this;
+        }
+
         public void addProgressListener(org.gradle.tooling.ProgressListener listener) {
             legacyProgressListeners.add(listener);
         }
@@ -151,17 +167,22 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
         }
 
         public ConsumerOperationParameters build() {
+            if (entryPoint == null) {
+                throw new IllegalStateException("No entry point specified.");
+            }
+
             // create the listener adapters right when the ConsumerOperationParameters are instantiated but no earlier,
             // this ensures that when multiple requests are issued that are built from the same builder, such requests do not share any state kept in the listener adapters
             // e.g. if the listener adapters do per-request caching, such caching must not leak between different requests built from the same builder
             ProgressListenerAdapter progressListenerAdapter = new ProgressListenerAdapter(this.legacyProgressListeners);
             FailsafeBuildProgressListenerAdapter buildProgressListenerAdapter = new FailsafeBuildProgressListenerAdapter(
-                new BuildProgressListenerAdapter(this.testProgressListeners, this.taskProgressListeners, this.buildOperationProgressListeners));
-            return new ConsumerOperationParameters(parameters, stdout, stderr, colorOutput, stdin, javaHome, jvmArguments, arguments, tasks, launchables,
-                progressListenerAdapter, buildProgressListenerAdapter, cancellationToken);
+                    new BuildProgressListenerAdapter(this.testProgressListeners, this.taskProgressListeners, this.buildOperationProgressListeners));
+            return new ConsumerOperationParameters(entryPoint, parameters, stdout, stderr, colorOutput, stdin, javaHome, jvmArguments, arguments, tasks, launchables, classpath,
+                    progressListenerAdapter, buildProgressListenerAdapter, cancellationToken);
         }
     }
 
+    private final String entryPointName;
     private final ProgressListenerAdapter progressListener;
     private final FailsafeBuildProgressListenerAdapter buildProgressListener;
     private final CancellationToken cancellationToken;
@@ -178,10 +199,12 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
     private final List<String> arguments;
     private final List<String> tasks;
     private final List<InternalLaunchable> launchables;
+    private final List<URI> classpath;
 
-    private ConsumerOperationParameters(ConnectionParameters parameters, OutputStream stdout, OutputStream stderr, Boolean colorOutput, InputStream stdin,
-                                        File javaHome, List<String> jvmArguments, List<String> arguments, List<String> tasks, List<InternalLaunchable> launchables,
+    private ConsumerOperationParameters(String entryPointName, ConnectionParameters parameters, OutputStream stdout, OutputStream stderr, Boolean colorOutput, InputStream stdin,
+                                        File javaHome, List<String> jvmArguments, List<String> arguments, List<String> tasks, List<InternalLaunchable> launchables, List<URI> classpath,
                                         ProgressListenerAdapter progressListener, FailsafeBuildProgressListenerAdapter buildProgressListener, CancellationToken cancellationToken) {
+        this.entryPointName = entryPointName;
         this.parameters = parameters;
         this.stdout = stdout;
         this.stderr = stderr;
@@ -192,13 +215,10 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
         this.arguments = arguments;
         this.tasks = tasks;
         this.launchables = launchables;
+        this.classpath = classpath;
         this.progressListener = progressListener;
         this.buildProgressListener = buildProgressListener;
         this.cancellationToken = cancellationToken;
-    }
-
-    private static List<String> rationalizeInput(String[] arguments) {
-        return arguments != null && arguments.length > 0 ? Arrays.asList(arguments) : null;
     }
 
     private static void validateJavaHome(File javaHome) {
@@ -208,6 +228,10 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
         if (!javaHome.isDirectory()) {
             throw new IllegalArgumentException("Supplied javaHome is not a valid folder. You supplied: " + javaHome);
         }
+    }
+
+    public String getEntryPointName() {
+        return entryPointName;
     }
 
     public long getStartTime() {
@@ -280,6 +304,10 @@ public class ConsumerOperationParameters implements BuildOperationParametersVers
 
     public List<InternalLaunchable> getLaunchables() {
         return launchables;
+    }
+
+    public List<URI> getClasspath() {
+        return classpath;
     }
 
     public ProgressListenerVersion1 getProgressListener() {

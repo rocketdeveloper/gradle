@@ -17,8 +17,9 @@
 package org.gradle.internal.component.local.model;
 
 import com.google.common.base.Objects;
+import com.google.common.base.Strings;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
-import org.gradle.api.artifacts.component.LibraryComponentIdentifier;
+import org.gradle.api.artifacts.component.LibraryBinaryIdentifier;
 import org.gradle.api.artifacts.component.LibraryComponentSelector;
 
 public class DefaultLibraryComponentSelector implements LibraryComponentSelector {
@@ -26,20 +27,20 @@ public class DefaultLibraryComponentSelector implements LibraryComponentSelector
     private final String libraryName;
 
     public DefaultLibraryComponentSelector(String projectPath, String libraryName) {
-        assert projectPath != null : "project path cannot be null";
-        assert libraryName != null : "library name cannot be null";
+        assert !Strings.isNullOrEmpty(projectPath) : "project path cannot be null or empty";
         this.projectPath = projectPath;
-        this.libraryName = libraryName;
+        this.libraryName = Strings.emptyToNull(libraryName);
     }
 
     @Override
     public String getDisplayName() {
-        if ("".equals(libraryName)) {
-            return String.format("project '%s'", projectPath);
-        } else if ("".equals(projectPath)) {
-            return String.format("library '%s'", libraryName);
+        String txt;
+        if (Strings.isNullOrEmpty(libraryName)) {
+            txt = String.format("project '%s'", projectPath);
+        } else {
+            txt = String.format("project '%s' library '%s'", projectPath, libraryName);
         }
-        return DefaultLibraryComponentIdentifier.libraryToConfigurationName(projectPath, libraryName);
+        return txt;
     }
 
     @Override
@@ -55,9 +56,10 @@ public class DefaultLibraryComponentSelector implements LibraryComponentSelector
     public boolean matchesStrictly(ComponentIdentifier identifier) {
         assert identifier != null : "identifier cannot be null";
 
-        if (identifier instanceof LibraryComponentIdentifier) {
-            LibraryComponentIdentifier projectComponentIdentifier = (LibraryComponentIdentifier) identifier;
-            return projectPath.equals(projectComponentIdentifier.getProjectPath()) && libraryName.equals(projectComponentIdentifier.getLibraryName());
+        if (identifier instanceof LibraryBinaryIdentifier) {
+            LibraryBinaryIdentifier projectComponentIdentifier = (LibraryBinaryIdentifier) identifier;
+            return projectPath.equals(projectComponentIdentifier.getProjectPath())
+                && projectComponentIdentifier.getLibraryName().equals(libraryName);
         }
 
         return false;

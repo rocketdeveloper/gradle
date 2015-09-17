@@ -102,6 +102,7 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
         and:
         output.contains "thing.value: foo-bar"
     }
+
     @Unroll
     def "only literal strings can be given to dollar - #code"() {
         when:
@@ -121,14 +122,14 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
 
         where:
         code << [
-                '$(1)',
-                '$("$name")',
-                '$("a" + "b")',
-                'def a = "foo"; $(a)',
-                '$("foo", "bar")',
-                '$()',
-                '$(null)',
-                '$("")'
+            '$(1)',
+            '$("$name")',
+            '$("a" + "b")',
+            'def a = "foo"; $(a)',
+            '$("foo", "bar")',
+            '$()',
+            '$(null)',
+            '$("")'
         ]
     }
 
@@ -159,7 +160,7 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
 
         where:
         code << [
-                'something.$(1)',
+            'something.$(1)',
 //                'this.$("$name")',
 //                'foo.bar().$("a" + "b")',
         ]
@@ -210,15 +211,15 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
 
         where:
         code << [
-                'if (true) { add $("foo") }',
-                'if (false) {} else if (true) { add $("foo") }',
-                'if (false) {} else { add $("foo") }',
-                'def i = true; while(i) { add $("foo"); i = false }',
-                '[1].each { add $("foo") }',
-                'add "${$("foo")}"',
-                'def v = $("foo"); add(v)',
-                'add($("foo"))',
-                'add($("foo").toString())',
+            'if (true) { add $("foo") }',
+            'if (false) {} else if (true) { add $("foo") }',
+            'if (false) {} else { add $("foo") }',
+            'def i = true; while(i) { add $("foo"); i = false }',
+            '[1].each { add $("foo") }',
+            'add "${$("foo")}"',
+            'def v = $("foo"); add(v)',
+            'add($("foo"))',
+            'add($("foo").toString())',
         ]
     }
 
@@ -281,16 +282,22 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
         fails "tasks"
 
         then:
-        failure.assertHasCause("""The following model rules are unbound:
-  model.fooar @ build file '${buildFile}' line 20, column 17
-    Mutable:
-      - fooar (java.lang.Object) - suggestions: foobar
-  model.foobah @ build file '${buildFile}' line 18, column 17
-    Mutable:
-      - foobah (java.lang.Object) - suggestions: foobar
-  model.foonar @ build file '${buildFile}' line 16, column 17
-    Mutable:
-      - foonar (java.lang.Object) - suggestions: foobar""")
+        failureCauseContains('''
+  model.fooar @ build.gradle line 20, column 17
+    subject:
+      - fooar Object [*]
+          suggestions: foobar
+
+  model.foobah @ build.gradle line 18, column 17
+    subject:
+      - foobah Object [*]
+          suggestions: foobar
+
+  model.foonar @ build.gradle line 16, column 17
+    subject:
+      - foonar Object [*]
+          suggestions: foobar
+''')
     }
 
     def "location and suggestions are provided for unbound rule inputs specified using a name"() {
@@ -321,14 +328,18 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
         fails "tasks"
 
         then:
-        failure.assertHasCause("""The following model rules are unbound:
-  model.tasks.raboof @ build file '${buildFile}' line 15, column 17
-    Mutable:
-      + tasks.raboof (java.lang.Object)
-    Immutable:
-      - tasks.foonar (java.lang.Object) @ line 16 - suggestions: tasks.foobar
-      - tasks.fooar (java.lang.Object) @ line 17 - suggestions: tasks.foobar
-      - tasks.foobarr (java.lang.Object) @ line 18 - suggestions: tasks.foobar""")
+        failureCauseContains('''
+  model.tasks.raboof @ build.gradle line 15, column 17
+    subject:
+      - tasks.raboof Object
+    inputs:
+      - tasks.foonar Object (@ line 16) [*]
+          suggestions: tasks.foobar
+      - tasks.fooar Object (@ line 17) [*]
+          suggestions: tasks.foobar
+      - tasks.foobarr Object (@ line 18) [*]
+          suggestions: tasks.foobar
+''')
     }
 
     def "can not access project or script from rule"() {
@@ -352,4 +363,5 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
         then:
         succeeds "tasks"
     }
+
 }

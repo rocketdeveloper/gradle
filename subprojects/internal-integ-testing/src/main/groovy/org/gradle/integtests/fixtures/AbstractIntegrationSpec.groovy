@@ -17,7 +17,7 @@ package org.gradle.integtests.fixtures
 
 import org.gradle.api.Action
 import org.gradle.integtests.fixtures.executer.*
-import org.gradle.test.fixtures.file.TestDirectoryProvider
+import org.gradle.test.fixtures.file.CleanupTestDirectory
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.fixtures.ivy.IvyFileRepository
@@ -25,32 +25,19 @@ import org.gradle.test.fixtures.maven.MavenFileRepository
 import org.gradle.test.fixtures.maven.MavenLocalRepository
 import org.hamcrest.CoreMatchers
 import org.junit.Rule
-import org.junit.runners.model.FrameworkMethod
-import org.junit.runners.model.Statement
 import spock.lang.Specification
+
+import static org.gradle.util.Matchers.normalizedLineSeparators
 
 /**
  * Spockified version of AbstractIntegrationTest.
  *
  * Plan is to bring features over as needed.
  */
-class AbstractIntegrationSpec extends Specification implements TestDirectoryProvider {
+@CleanupTestDirectory
+class AbstractIntegrationSpec extends Specification {
     @Rule
-    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider() {
-        @Override
-        Statement apply(Statement base, FrameworkMethod method, Object target) {
-            return super.apply(new Statement() {
-                @Override
-                void evaluate() throws Throwable {
-                    try {
-                        base.evaluate()
-                    } finally {
-                        cleanupWhileTestFilesExist()
-                    }
-                }
-            }, method, target)
-        }
-    }
+    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
 
     GradleDistribution distribution = new UnderDevelopmentGradleDistribution()
     GradleExecuter executer = new GradleContextualExecuter(distribution, temporaryFolder)
@@ -59,9 +46,6 @@ class AbstractIntegrationSpec extends Specification implements TestDirectoryProv
     ExecutionFailure failure
     private MavenFileRepository mavenRepo
     private IvyFileRepository ivyRepo
-
-    protected void cleanupWhileTestFilesExist() {
-    }
 
     protected TestFile getBuildFile() {
         testDirectory.file('build.gradle')
@@ -190,15 +174,19 @@ class AbstractIntegrationSpec extends Specification implements TestDirectoryProv
     }
 
     protected void failureDescriptionStartsWith(String description) {
-        failure.assertThatDescription(CoreMatchers.startsWith(description))
+        failure.assertThatDescription(normalizedLineSeparators(CoreMatchers.containsString(description)))
     }
 
     protected void failureDescriptionContains(String description) {
-        failure.assertThatDescription(CoreMatchers.containsString(description))
+        failure.assertThatDescription(normalizedLineSeparators(CoreMatchers.containsString(description)))
+    }
+
+    protected void failureCauseContains(String description) {
+        failure.assertThatCause(normalizedLineSeparators(CoreMatchers.containsString(description)))
     }
 
     private assertHasResult() {
-        assert result != null : "result is null, you haven't run succeeds()"
+        assert result != null: "result is null, you haven't run succeeds()"
     }
 
     String getOutput() {
@@ -277,5 +265,10 @@ class AbstractIntegrationSpec extends Specification implements TestDirectoryProv
     def createDir(String name, Closure cl) {
         TestFile root = file(name)
         root.create(cl)
+    }
+
+    void outputContains(String string) {
+        assertHasResult()
+        result.assertOutputContains(string.trim())
     }
 }

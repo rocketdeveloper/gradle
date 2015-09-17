@@ -18,6 +18,7 @@ package org.gradle.language.base.internal.model;
 
 import org.gradle.api.Action;
 import org.gradle.api.NamedDomainObjectFactory;
+import org.gradle.api.file.SourceDirectorySet;
 import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.LanguageSourceSet;
 import org.gradle.language.base.internal.registry.LanguageRegistration;
@@ -44,18 +45,10 @@ public class ComponentRules extends RuleSource {
 
     @Defaults
     void applyDefaultSourceConventions(final ComponentSpec component) {
-        component.getSource().afterEach(new Action<LanguageSourceSet>() {
-            @Override
-            public void execute(LanguageSourceSet languageSourceSet) {
-                // Only apply default locations when none explicitly configured
-                if (languageSourceSet.getSource().getSrcDirs().isEmpty()) {
-                    languageSourceSet.getSource().srcDir(String.format("src/%s/%s", component.getName(), languageSourceSet.getName()));
-                }
-            }
-        });
+        component.getSources().afterEach(new AddDefaultSourceLocation(component.getName()));
     }
 
-    // TODO:DAZ Needs to be a separate action since can't have parameterized utility methods in a RuleSource
+    // Currently needs to be a separate action since can't have parameterized utility methods in a RuleSource
     private static class ComponentSourcesRegistrationAction<U extends LanguageSourceSet> implements Action<ComponentSpecInternal> {
         private final LanguageRegistration<U> languageRegistration;
         private final LanguageTransformContainer languageTransforms;
@@ -75,7 +68,7 @@ public class ComponentRules extends RuleSource {
         }
 
         void registerLanguageSourceSetFactory(final ComponentSpecInternal component) {
-            final FunctionalSourceSet functionalSourceSet = component.getSources();
+            final FunctionalSourceSet functionalSourceSet = component.getFunctionalSourceSet();
             NamedDomainObjectFactory<? extends U> sourceSetFactory = languageRegistration.getSourceSetFactory(functionalSourceSet.getName());
             functionalSourceSet.registerFactory(languageRegistration.getSourceSetType(), sourceSetFactory);
         }
@@ -85,9 +78,26 @@ public class ComponentRules extends RuleSource {
             for (LanguageTransform<?, ?> languageTransform : languageTransforms) {
                 if (languageTransform.getSourceSetType().equals(languageRegistration.getSourceSetType())
                         && component.getInputTypes().contains(languageTransform.getOutputType())) {
-                    component.getSource().create(languageRegistration.getName(), languageRegistration.getSourceSetType());
+                    component.getSources().create(languageRegistration.getName(), languageRegistration.getSourceSetType());
                     return;
                 }
+            }
+        }
+    }
+
+    private static class AddDefaultSourceLocation implements Action<LanguageSourceSet> {
+        private String name;
+
+        public AddDefaultSourceLocation(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public void execute(LanguageSourceSet languageSourceSet) {
+            // Only apply default locations when none explicitly configured
+            final SourceDirectorySet source = languageSourceSet.getSource();
+            if (source.getSrcDirs().isEmpty()) {
+                source.srcDir(String.format("src/%s/%s", name, languageSourceSet.getName()));
             }
         }
     }

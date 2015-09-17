@@ -18,7 +18,6 @@ package org.gradle.jvm.plugins
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.EnableModelDsl
 import org.gradle.test.fixtures.archive.JarTestFixture
-import spock.lang.Ignore
 
 class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
 
@@ -134,8 +133,8 @@ class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
         components {
             myJvmLib(JvmLibrarySpec)
         }
-        jvm {
-            allBinaries { jar ->
+        binaries {
+            all { jar ->
                 jar.jarFile = new File($("buildDir"), "bin/${jar.name}.bin")
             }
         }
@@ -148,10 +147,9 @@ class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
         file("build/bin/myJvmLibJar.bin").assertExists()
     }
 
-    @Ignore("Not yet implemented")
     def "can configure jvm binary for component"() {
         given:
-        buildFile << """
+        buildFile << '''
     plugins {
         id 'jvm-component'
     }
@@ -159,13 +157,15 @@ class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
     model {
         components {
             myJvmLib(JvmLibrarySpec) {
-                binaries.withType(JarBinarySpec) { jar ->
-                    jar.jarFile = file("\${project.buildDir}/bin/\${jar.name}.bin")
+                binaries {
+                    all { jar ->
+                        jar.jarFile = new File($("buildDir"), "bin/${jar.name}.bin")
+                    }
                 }
             }
         }
     }
-"""
+'''
         when:
         succeeds "myJvmLibJar"
 
@@ -175,7 +175,7 @@ class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
 
     def "can specify additional builder tasks for binary"() {
         given:
-        buildFile << """
+        buildFile << '''
     plugins {
         id 'jvm-component'
     }
@@ -184,21 +184,24 @@ class JvmComponentPluginIntegrationTest extends AbstractIntegrationSpec {
         components {
             myJvmLib(JvmLibrarySpec)
         }
-    }
-    binaries.all { binary ->
-        def logTask = project.tasks.create("log_\${binary.name}") {
-            doLast {
-                println "Constructing \${binary.displayName}"
+        tasks {
+            $("binaries").values().each { binary ->
+                def taskName = "log" + binary.name.capitalize()
+                create(taskName) { task ->
+                    task.doLast {
+                        println "Constructing " + binary.displayName
+                    }
+                }
+                binary.buildTask.dependsOn(taskName)
             }
         }
-        binary.builtBy(logTask)
     }
-"""
+'''
         when:
         succeeds "myJvmLibJar"
 
         then:
-        executed ":createMyJvmLibJar", ":log_myJvmLibJar", ":myJvmLibJar"
+        executed ":createMyJvmLibJar", ":logMyJvmLibJar", ":myJvmLibJar"
 
         and:
         output.contains("Constructing Jar 'myJvmLibJar'")

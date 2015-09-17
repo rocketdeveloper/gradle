@@ -15,18 +15,17 @@
  */
 
 package org.gradle.model.dsl.internal
-
 import org.gradle.api.Transformer
 import org.gradle.model.InvalidModelRuleDeclarationException
 import org.gradle.model.Managed
 import org.gradle.model.dsl.internal.inputs.RuleInputAccessBacking
 import org.gradle.model.dsl.internal.transform.InputReferences
 import org.gradle.model.dsl.internal.transform.SourceLocation
+import org.gradle.model.internal.core.DefaultNodeInitializerRegistry
 import org.gradle.model.internal.core.ModelCreators
 import org.gradle.model.internal.core.ModelPath
 import org.gradle.model.internal.core.ModelReference
 import org.gradle.model.internal.core.rule.describe.SimpleModelRuleDescriptor
-import org.gradle.model.internal.inspect.DefaultModelCreatorFactory
 import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
 import org.gradle.model.internal.registry.DefaultModelRegistry
 import org.gradle.model.internal.type.ModelType
@@ -35,11 +34,11 @@ import spock.lang.Specification
 class TransformedModelDslBackingTest extends Specification {
 
     def modelRegistry = new DefaultModelRegistry(null)
-    Transformer<List<ModelReference<?>>, Closure<?>> referenceExtractor = Mock()
-    Transformer<SourceLocation, Closure<?>> locationExtractor = Mock()
+    def referenceExtractor = Mock(Transformer)
+    def locationExtractor = Mock(Transformer)
     def schemaStore = DefaultModelSchemaStore.instance
-    def creator = new DefaultModelCreatorFactory(schemaStore)
-    def modelDsl = new TransformedModelDslBacking(getModelRegistry(), schemaStore, creator, referenceExtractor, locationExtractor)
+    def nodeInitializerRegistry = new DefaultNodeInitializerRegistry(DefaultModelSchemaStore.instance)
+    def modelDsl = new TransformedModelDslBacking(getModelRegistry(), schemaStore, nodeInitializerRegistry, referenceExtractor, locationExtractor)
 
     void register(String pathString, Object element) {
         modelRegistry.create(ModelCreators.bridgedInstance(ModelReference.of(pathString, element.class), element).descriptor("register").build())
@@ -123,6 +122,5 @@ class TransformedModelDslBackingTest extends Specification {
         then:
         modelRegistry.realize(ModelPath.path("foo"), ModelType.of(List)) == ["123"]
     }
-
 }
 

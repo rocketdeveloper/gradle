@@ -27,6 +27,7 @@ import org.gradle.model.InvalidModelRuleDeclarationException;
 import org.gradle.model.internal.core.*;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.core.rule.describe.SimpleModelRuleDescriptor;
+import org.gradle.model.internal.manage.schema.ManagedImplModelSchema;
 import org.gradle.model.internal.manage.schema.ModelSchema;
 import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.registry.ModelRegistry;
@@ -43,42 +44,48 @@ public class NonTransformedModelDslBacking extends GroovyObjectSupport {
     private final ModelPath modelPath;
     private final ModelRegistry modelRegistry;
     private final ModelSchemaStore modelSchemaStore;
-    private final ModelCreatorFactory modelCreatorFactory;
+    private final NodeInitializerRegistry nodeInitializerRegistry;
     private AtomicBoolean executingDsl;
 
-    public NonTransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore modelSchemaStore, ModelCreatorFactory modelCreatorFactory) {
-        this(new AtomicBoolean(), null, modelRegistry, modelSchemaStore, modelCreatorFactory);
+    public NonTransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore modelSchemaStore, NodeInitializerRegistry nodeInitializerRegistry) {
+        this(new AtomicBoolean(), null, modelRegistry, modelSchemaStore, nodeInitializerRegistry);
     }
 
-    private NonTransformedModelDslBacking(AtomicBoolean executingDsl, ModelPath modelPath, ModelRegistry modelRegistry, ModelSchemaStore modelSchemaStore, ModelCreatorFactory modelCreatorFactory) {
+    private NonTransformedModelDslBacking(AtomicBoolean executingDsl, ModelPath modelPath, ModelRegistry modelRegistry, ModelSchemaStore modelSchemaStore, NodeInitializerRegistry nodeInitializerRegistry) {
         this.executingDsl = executingDsl;
         this.modelPath = modelPath;
         this.modelRegistry = modelRegistry;
         this.modelSchemaStore = modelSchemaStore;
-        this.modelCreatorFactory = modelCreatorFactory;
+        this.nodeInitializerRegistry = nodeInitializerRegistry;
     }
 
     private NonTransformedModelDslBacking getChildPath(String name) {
         ModelPath path = modelPath == null ? ModelPath.path(name) : modelPath.child(name);
-        return new NonTransformedModelDslBacking(executingDsl, path, modelRegistry, modelSchemaStore, modelCreatorFactory);
+        return new NonTransformedModelDslBacking(executingDsl, path, modelRegistry, modelSchemaStore, nodeInitializerRegistry);
     }
 
     private void registerConfigurationAction(final Closure<?> action) {
         modelRegistry.configure(ModelActionRole.Mutate,
-                new NoInputsModelAction<Object>(
-                        ModelReference.untyped(modelPath),
-                        new SimpleModelRuleDescriptor("model." + modelPath), new ClosureBackedAction<Object>(action)
-                ));
+            new NoInputsModelAction<Object>(
+                ModelReference.untyped(modelPath),
+                new SimpleModelRuleDescriptor("model." + modelPath), new ClosureBackedAction<Object>(action)
+            ));
     }
 
     private <T> void registerCreator(Class<T> type, Closure<?> closure) {
         ModelRuleDescriptor descriptor = new SimpleModelRuleDescriptor("model." + modelPath);
         ModelSchema<T> schema = modelSchemaStore.getSchema(ModelType.of(type));
-        if (!schema.getKind().isManaged()) {
+        if (!(schema instanceof ManagedImplModelSchema)) {
             throw new InvalidModelRuleDeclarationException(descriptor, "Cannot create an element of type " + type.getName() + " as it is not a managed type");
         }
+        NodeInitializer nodeInitializer = nodeInitializerRegistry.getNodeInitializer((ManagedImplModelSchema<?>) schema);
 
-        modelRegistry.create(modelCreatorFactory.creator(descriptor, modelPath, schema, new ClosureBackedAction<T>(closure)));
+        modelRegistry.create(
+            ModelCreators.of(modelPath, nodeInitializer)
+                .descriptor(descriptor)
+                .action(ModelActionRole.Initialize, NoInputsModelAction.of(ModelReference.of(modelPath, type), descriptor, new ClosureBackedAction<T>(closure)))
+                .build()
+        );
     }
 
     public void configure(Closure<?> action) {

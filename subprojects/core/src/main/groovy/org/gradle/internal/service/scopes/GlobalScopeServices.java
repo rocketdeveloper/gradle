@@ -21,10 +21,7 @@ import org.gradle.StartParameter;
 import org.gradle.api.internal.*;
 import org.gradle.api.internal.changedetection.state.CachingFileSnapshotter;
 import org.gradle.api.internal.changedetection.state.InMemoryTaskArtifactCache;
-import org.gradle.api.internal.classpath.DefaultModuleRegistry;
-import org.gradle.api.internal.classpath.DefaultPluginModuleRegistry;
-import org.gradle.api.internal.classpath.ModuleRegistry;
-import org.gradle.api.internal.classpath.PluginModuleRegistry;
+import org.gradle.api.internal.classpath.*;
 import org.gradle.api.internal.file.*;
 import org.gradle.api.internal.hash.DefaultHasher;
 import org.gradle.api.internal.initialization.loadercache.*;
@@ -39,6 +36,8 @@ import org.gradle.configuration.ImportsReader;
 import org.gradle.initialization.*;
 import org.gradle.internal.classloader.ClassLoaderFactory;
 import org.gradle.internal.classloader.DefaultClassLoaderFactory;
+import org.gradle.internal.classpath.ClassPath;
+import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.environment.GradleBuildEnvironment;
@@ -53,15 +52,19 @@ import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.ServiceLocator;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.internal.session.BuildSession;
-import org.gradle.internal.session.DefaultBuildSession;
 import org.gradle.messaging.remote.MessagingServer;
 import org.gradle.messaging.remote.internal.MessagingServices;
 import org.gradle.messaging.remote.internal.inet.InetAddressFactory;
-import org.gradle.model.internal.core.ModelCreatorFactory;
-import org.gradle.model.internal.inspect.*;
+import org.gradle.model.internal.core.DefaultInstanceFactoryRegistry;
+import org.gradle.model.internal.core.DefaultNodeInitializerRegistry;
+import org.gradle.model.internal.core.InstanceFactoryRegistry;
+import org.gradle.model.internal.core.NodeInitializerRegistry;
+import org.gradle.model.internal.inspect.MethodModelRuleExtractor;
+import org.gradle.model.internal.inspect.MethodModelRuleExtractors;
+import org.gradle.model.internal.inspect.ModelRuleExtractor;
+import org.gradle.model.internal.inspect.ModelRuleSourceDetector;
 import org.gradle.model.internal.manage.schema.ModelSchemaStore;
-import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore;
+import org.gradle.model.internal.manage.schema.extract.*;
 import org.gradle.model.internal.persist.AlwaysNewModelRegistryStore;
 import org.gradle.model.internal.persist.ModelRegistryStore;
 import org.gradle.model.internal.persist.ReusingModelRegistryStore;
@@ -74,10 +77,16 @@ import java.util.List;
 public class GlobalScopeServices {
 
     private static final Logger LOGGER = Logging.getLogger(GlobalScopeServices.class);
+    private final ClassPath additionalModuleClassPath;
 
     private GradleBuildEnvironment environment;
 
     public GlobalScopeServices(final boolean longLiving) {
+        this(longLiving, new DefaultClassPath());
+    }
+
+    public GlobalScopeServices(final boolean longLiving, ClassPath additionalModuleClassPath) {
+        this.additionalModuleClassPath = additionalModuleClassPath;
         this.environment = new GradleBuildEnvironment() {
             public boolean isLongLivingProcess() {
                 return longLiving;
@@ -116,8 +125,12 @@ public class GlobalScopeServices {
                 pluginModuleRegistry));
     }
 
-    DefaultModuleRegistry createModuleRegistry() {
-        return new DefaultModuleRegistry();
+    ModuleRegistry createModuleRegistry() {
+        return new DefaultModuleRegistry(additionalModuleClassPath);
+    }
+
+    GradleDistributionLocator createGradleDistributionLocator() {
+        return new DefaultGradleDistributionLocator();
     }
 
     DocumentationRegistry createDocumentationRegistry() {
@@ -190,9 +203,9 @@ public class GlobalScopeServices {
         return new DefaultFileLookup(fileSystem);
     }
 
-    ModelRuleExtractor createModelRuleInspector(ServiceRegistry services, ModelSchemaStore modelSchemaStore, ModelCreatorFactory modelCreatorFactory) {
+    ModelRuleExtractor createModelRuleInspector(ServiceRegistry services, ModelSchemaStore modelSchemaStore, NodeInitializerRegistry nodeInitializerRegistry) {
         List<MethodModelRuleExtractor> extractors = services.getAll(MethodModelRuleExtractor.class);
-        List<MethodModelRuleExtractor> coreExtractors = MethodModelRuleExtractors.coreExtractors(modelSchemaStore, modelCreatorFactory);
+        List<MethodModelRuleExtractor> coreExtractors = MethodModelRuleExtractors.coreExtractors(modelSchemaStore, nodeInitializerRegistry);
         return new ModelRuleExtractor(Iterables.concat(coreExtractors, extractors));
     }
 
@@ -209,12 +222,27 @@ public class GlobalScopeServices {
         return new DefaultClassLoaderCache(classPathSnapshotter);
     }
 
-    private DefaultModelCreatorFactory createModelCreatorFactory(ModelSchemaStore modelSchemaStore) {
-        return new DefaultModelCreatorFactory(modelSchemaStore);
+    protected ModelSchemaAspectExtractor createModelSchemaAspectExtractor(ServiceRegistry serviceRegistry) {
+        List<ModelSchemaAspectExtractionStrategy> strategies = serviceRegistry.getAll(ModelSchemaAspectExtractionStrategy.class);
+        return new ModelSchemaAspectExtractor(strategies);
     }
 
-    protected ModelSchemaStore createModelSchemaStore() {
-        return DefaultModelSchemaStore.getInstance();
+    protected ModelSchemaExtractor createModelSchemaExtractor(ModelSchemaAspectExtractor aspectExtractor, ServiceRegistry serviceRegistry) {
+        List<ModelSchemaExtractionStrategy> strategies = serviceRegistry.getAll(ModelSchemaExtractionStrategy.class);
+        return new ModelSchemaExtractor(strategies, aspectExtractor);
+    }
+
+    protected InstanceFactoryRegistry createInstanceFactoryRegistry() {
+        return new DefaultInstanceFactoryRegistry();
+    }
+
+    protected ModelSchemaStore createModelSchemaStore(ModelSchemaExtractor modelSchemaExtractor) {
+        return new DefaultModelSchemaStore(modelSchemaExtractor);
+    }
+
+    protected NodeInitializerRegistry createNodeInitializerRegistry(ServiceRegistry serviceRegistry, ModelSchemaStore schemaStore, InstanceFactoryRegistry instanceFactoryRegistry) {
+        List<NodeInitializerExtractionStrategy> strategies = serviceRegistry.getAll(NodeInitializerExtractionStrategy.class);
+        return new DefaultNodeInitializerRegistry(schemaStore, instanceFactoryRegistry, strategies);
     }
 
     protected ModelRuleSourceDetector createModelRuleSourceDetector() {
@@ -238,7 +266,4 @@ public class GlobalScopeServices {
         return new DefaultFileWatcherFactory(executorFactory);
     }
 
-    BuildSession createBuildSession() {
-        return new DefaultBuildSession();
-    }
 }

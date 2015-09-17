@@ -47,6 +47,52 @@ class ModelReportIntegrationTest extends AbstractIntegrationSpec {
         })
     }
 
+    def "displays collections of scalar types in a human-readable format"() {
+        given:
+        buildFile << '''
+
+@Managed
+interface Container {
+   List<String> getLabels()
+   List<Integer> getIds()
+   List<Double> getValues()
+   void setValues(List<Double> values)
+}
+
+model {
+    container(Container) {
+        labels.add 'bug'
+        labels.add 'blocker'
+    }
+}
+'''
+        when:
+        run "model"
+
+        then:
+        ModelReportOutput.from(output).hasNodeStructure({
+            model {
+                container {
+                    ids(type: 'java.util.List<java.lang.Integer>', creator: 'model.container')
+                    labels(type: 'java.util.List<java.lang.String>', creator: 'model.container', nodeValue: "[bug, blocker]")
+                    values(type: 'java.util.List<java.lang.Double>', creator: 'model.container')
+                }
+                tasks {
+                    components(nodeValue: "task ':components'")
+                    dependencies(nodeValue: "task ':dependencies'")
+                    dependencyInsight(nodeValue: "task ':dependencyInsight'")
+                    help(nodeValue: "task ':help'")
+                    init(nodeValue: "task ':init'")
+                    model(nodeValue: "task ':model'")
+                    projects(nodeValue: "task ':projects'")
+                    properties(nodeValue: "task ':properties'")
+                    tasks(nodeValue: "task ':tasks'")
+                    wrapper()
+                }
+            }
+        })
+    }
+
     def "displays basic values of a simple model graph with values"() {
         given:
         buildFile << """
@@ -60,11 +106,7 @@ public interface PasswordCredentials {
 }
 
 
-@Managed
-public interface Numbers {
-    Integer getValue()
-    void setValue(Integer i)
-}
+${managedNumbers()}
 
 model {
     primaryCredentials(PasswordCredentials){
@@ -75,6 +117,7 @@ model {
     nullCredentials(PasswordCredentials) { }
     numbers(Numbers){
         value = 5
+        threshold = 0.8
     }
 }
 
@@ -87,16 +130,17 @@ model {
         ModelReportOutput.from(output).hasNodeStructure({
             model {
                 nullCredentials {
-                    password(type: 'java.lang.String', origin: 'model.nullCredentials')
-                    username(type: 'java.lang.String', origin: 'model.nullCredentials')
+                    password(type: 'java.lang.String', creator: 'model.nullCredentials')
+                    username(type: 'java.lang.String', creator: 'model.nullCredentials')
                 }
 
                 numbers {
+                    threshold(nodeValue: "0.8")
                     value(nodeValue: "5")
                 }
                 primaryCredentials {
-                    password(nodeValue: 'hunter2', type: 'java.lang.String', origin: 'model.primaryCredentials')
-                    username(nodeValue: 'uname', type: 'java.lang.String', origin: 'model.primaryCredentials')
+                    password(nodeValue: 'hunter2', type: 'java.lang.String', creator: 'model.primaryCredentials')
+                    username(nodeValue: 'uname', type: 'java.lang.String', creator: 'model.primaryCredentials')
                 }
                 tasks {
                     components(nodeValue: "task ':components'")
@@ -129,11 +173,7 @@ public interface PasswordCredentials {
 }
 
 
-@Managed
-public interface Numbers {
-    Integer getValue()
-    void setValue(Integer i)
-}
+${managedNumbers()}
 
 model {
     primaryCredentials(PasswordCredentials){
@@ -144,6 +184,7 @@ model {
     nullCredentials(PasswordCredentials) { }
     numbers(Numbers){
         value = 5
+        threshold = 0.8
     }
 }
 
@@ -160,127 +201,154 @@ model {
         modelReportOutput.nodeContentEquals('''
 + model
     + nullCredentials
-          | Type:   \tPasswordCredentials |
-          | Origin: \tmodel.nullCredentials |
-          | Rules:  |
-             ⤷ model.nullCredentials
-             ⤷ model.nullCredentials
+          | Type:   \tPasswordCredentials
+          | Creator: \tmodel.nullCredentials
         + password
-              | Type:   \tjava.lang.String |
-              | Origin: \tmodel.nullCredentials |
-              | Rules:  |
-                 ⤷ model.nullCredentials
+              | Type:   \tjava.lang.String
+              | Creator: \tmodel.nullCredentials
         + username
-              | Type:   \tjava.lang.String |
-              | Origin: \tmodel.nullCredentials |
-              | Rules:  |
-                 ⤷ model.nullCredentials
+              | Type:   \tjava.lang.String
+              | Creator: \tmodel.nullCredentials
     + numbers
-          | Type:   \tNumbers |
-          | Origin: \tmodel.numbers |
-          | Rules:  |
-             ⤷ model.numbers
-             ⤷ model.numbers
+          | Type:   \tNumbers
+          | Creator: \tmodel.numbers
+        + threshold
+              | Type:   \tdouble
+              | Value:  \t0.8
+              | Creator: \tmodel.numbers
         + value
-              | Type:   \tjava.lang.Integer |
-              | Origin: \tmodel.numbers |
-              | Value:  \t5 |
-              | Rules:  |
-                 ⤷ model.numbers
+              | Type:   \tjava.lang.Integer
+              | Value:  \t5
+              | Creator: \tmodel.numbers
     + primaryCredentials
-          | Type:   \tPasswordCredentials |
-          | Origin: \tmodel.primaryCredentials |
-          | Rules:  |
-             ⤷ model.primaryCredentials
-             ⤷ model.primaryCredentials
+          | Type:   \tPasswordCredentials
+          | Creator: \tmodel.primaryCredentials
         + password
-              | Type:   \tjava.lang.String |
-              | Origin: \tmodel.primaryCredentials |
-              | Value:  \thunter2 |
-              | Rules:  |
-                 ⤷ model.primaryCredentials
+              | Type:   \tjava.lang.String
+              | Value:  \thunter2
+              | Creator: \tmodel.primaryCredentials
         + username
-              | Type:   \tjava.lang.String |
-              | Origin: \tmodel.primaryCredentials |
-              | Value:  \tuname |
-              | Rules:  |
-                 ⤷ model.primaryCredentials
+              | Type:   \tjava.lang.String
+              | Value:  \tuname
+              | Creator: \tmodel.primaryCredentials
     + tasks
-          | Type:   \torg.gradle.model.ModelMap<org.gradle.api.Task> |
-          | Origin: \tProject.<init>.tasks() |
-          | Rules:  |
-             ⤷ Project.<init>.tasks()
+          | Type:   \torg.gradle.model.ModelMap<org.gradle.api.Task>
+          | Creator: \tProject.<init>.tasks()
         + components
-              | Type:   \torg.gradle.api.reporting.components.ComponentReport |
-              | Origin: \ttasks.addPlaceholderAction(components) |
-              | Value:  \ttask ':components' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(components)
+              | Type:   \torg.gradle.api.reporting.components.ComponentReport
+              | Value:  \ttask ':components'
+              | Creator: \ttasks.addPlaceholderAction(components)
+              | Rules:
                  ⤷ copyToTaskContainer
         + dependencies
-              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyReportTask |
-              | Origin: \ttasks.addPlaceholderAction(dependencies) |
-              | Value:  \ttask ':dependencies' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(dependencies)
+              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyReportTask
+              | Value:  \ttask ':dependencies'
+              | Creator: \ttasks.addPlaceholderAction(dependencies)
+              | Rules:
                  ⤷ copyToTaskContainer
         + dependencyInsight
-              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyInsightReportTask |
-              | Origin: \ttasks.addPlaceholderAction(dependencyInsight) |
-              | Value:  \ttask ':dependencyInsight' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(dependencyInsight)
-                 ⤷ org.gradle.api.plugins.HelpTasksPlugin$Rules#addDefaultDependenciesReportConfiguration(org.gradle.api.tasks.diagnostics.DependencyInsightReportTask, org.gradle.internal.service.ServiceRegistry)
+              | Type:   \torg.gradle.api.tasks.diagnostics.DependencyInsightReportTask
+              | Value:  \ttask ':dependencyInsight'
+              | Creator: \ttasks.addPlaceholderAction(dependencyInsight)
+              | Rules:
+                 ⤷ HelpTasksPlugin.Rules#addDefaultDependenciesReportConfiguration
                  ⤷ copyToTaskContainer
         + help
-              | Type:   \torg.gradle.configuration.Help |
-              | Origin: \ttasks.addPlaceholderAction(help) |
-              | Value:  \ttask ':help' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(help)
+              | Type:   \torg.gradle.configuration.Help
+              | Value:  \ttask ':help'
+              | Creator: \ttasks.addPlaceholderAction(help)
+              | Rules:
                  ⤷ copyToTaskContainer
         + init
-              | Type:   \torg.gradle.buildinit.tasks.InitBuild |
-              | Origin: \ttasks.addPlaceholderAction(init) |
-              | Value:  \ttask ':init' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(init)
+              | Type:   \torg.gradle.buildinit.tasks.InitBuild
+              | Value:  \ttask ':init'
+              | Creator: \ttasks.addPlaceholderAction(init)
+              | Rules:
                  ⤷ copyToTaskContainer
         + model
-              | Type:   \torg.gradle.api.reporting.model.ModelReport |
-              | Origin: \ttasks.addPlaceholderAction(model) |
-              | Value:  \ttask ':model' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(model)
+              | Type:   \torg.gradle.api.reporting.model.ModelReport
+              | Value:  \ttask ':model'
+              | Creator: \ttasks.addPlaceholderAction(model)
+              | Rules:
                  ⤷ copyToTaskContainer
         + projects
-              | Type:   \torg.gradle.api.tasks.diagnostics.ProjectReportTask |
-              | Origin: \ttasks.addPlaceholderAction(projects) |
-              | Value:  \ttask ':projects' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(projects)
+              | Type:   \torg.gradle.api.tasks.diagnostics.ProjectReportTask
+              | Value:  \ttask ':projects'
+              | Creator: \ttasks.addPlaceholderAction(projects)
+              | Rules:
                  ⤷ copyToTaskContainer
         + properties
-              | Type:   \torg.gradle.api.tasks.diagnostics.PropertyReportTask |
-              | Origin: \ttasks.addPlaceholderAction(properties) |
-              | Value:  \ttask ':properties' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(properties)
+              | Type:   \torg.gradle.api.tasks.diagnostics.PropertyReportTask
+              | Value:  \ttask ':properties'
+              | Creator: \ttasks.addPlaceholderAction(properties)
+              | Rules:
                  ⤷ copyToTaskContainer
         + tasks
-              | Type:   \torg.gradle.api.tasks.diagnostics.TaskReportTask |
-              | Origin: \ttasks.addPlaceholderAction(tasks) |
-              | Value:  \ttask ':tasks' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(tasks)
+              | Type:   \torg.gradle.api.tasks.diagnostics.TaskReportTask
+              | Value:  \ttask ':tasks'
+              | Creator: \ttasks.addPlaceholderAction(tasks)
+              | Rules:
                  ⤷ copyToTaskContainer
         + wrapper
-              | Type:   \torg.gradle.api.tasks.wrapper.Wrapper |
-              | Origin: \ttasks.addPlaceholderAction(wrapper) |
-              | Value:  \ttask ':wrapper' |
-              | Rules:  |
-                 ⤷ tasks.addPlaceholderAction(wrapper)
+              | Type:   \torg.gradle.api.tasks.wrapper.Wrapper
+              | Value:  \ttask ':wrapper'
+              | Creator: \ttasks.addPlaceholderAction(wrapper)
+              | Rules:
                  ⤷ copyToTaskContainer
 ''')
+    }
+
+    def "method rule sources have simple type names and correct order"() {
+        given:
+        buildFile << """
+${managedNumbers()}
+
+class NumberRules extends RuleSource {
+    @Model("myNumbers")
+    void createRule(Numbers n) {
+       n.setValue(5)
+       n.setThreshold(0.8)
+    }
+    @Defaults void defaultsRule(Numbers n) {}
+    @Mutate void mutateRule(Numbers n) {}
+    @Finalize void finalizeRule(Numbers n) {}
+    @Validate void validateRule(Numbers n) {}
+}
+
+class ClassHolder {
+    static class InnerRules extends RuleSource {
+         @Mutate void mutateRule(Numbers n) {}
+    }
+}
+
+apply plugin: NumberRules
+apply plugin: ClassHolder.InnerRules
+"""
+        buildFile
+        when:
+        run "model"
+
+        then:
+        def modelNode = ModelReportOutput.from(output).modelNode
+        modelNode.myNumbers.@creator[0] == 'NumberRules#createRule'
+
+        int i = 0
+        def rules = modelNode.myNumbers.@rules[0]
+        rules[i++] == 'NumberRules#defaultsRule'
+        rules[i++] == 'NumberRules#mutateRule'
+        rules[i++] == 'ClassHolder.InnerRules#mutateRule'
+        rules[i++] == 'NumberRules#finalizeRule'
+        rules[i] == 'NumberRules#validateRule'
+    }
+
+    private String managedNumbers() {
+        return """@Managed
+        public interface Numbers {
+            Integer getValue()
+            void setValue(Integer i)
+
+            double getThreshold()
+            void setThreshold(double d)
+        }"""
     }
 }

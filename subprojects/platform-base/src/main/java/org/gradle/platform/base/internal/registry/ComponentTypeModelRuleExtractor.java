@@ -18,18 +18,16 @@ package org.gradle.platform.base.internal.registry;
 
 import com.google.common.collect.ImmutableList;
 import org.gradle.api.internal.project.ProjectIdentifier;
-import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.reflect.Instantiator;
-import org.gradle.internal.reflect.JavaReflectionUtil;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.util.BiFunction;
-import org.gradle.language.base.FunctionalSourceSet;
 import org.gradle.language.base.ProjectSourceSet;
-import org.gradle.language.base.internal.DefaultFunctionalSourceSet;
 import org.gradle.language.base.plugins.ComponentModelBasePlugin;
 import org.gradle.model.internal.core.*;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.inspect.MethodRuleDefinition;
+import org.gradle.model.internal.manage.schema.ModelSchema;
+import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.type.ModelType;
 import org.gradle.platform.base.ComponentSpec;
 import org.gradle.platform.base.ComponentSpecIdentifier;
@@ -38,14 +36,20 @@ import org.gradle.platform.base.ComponentTypeBuilder;
 import org.gradle.platform.base.component.BaseComponentSpec;
 import org.gradle.platform.base.internal.ComponentSpecFactory;
 import org.gradle.platform.base.internal.DefaultComponentSpecIdentifier;
+import org.gradle.platform.base.internal.builder.TypeBuilderFactory;
 import org.gradle.platform.base.internal.builder.TypeBuilderInternal;
 
 import java.util.Arrays;
 import java.util.List;
 
 public class ComponentTypeModelRuleExtractor extends TypeModelRuleExtractor<ComponentType, ComponentSpec, BaseComponentSpec> {
-    public ComponentTypeModelRuleExtractor() {
-        super("component", ComponentSpec.class, BaseComponentSpec.class, ComponentTypeBuilder.class, JavaReflectionUtil.factory(DirectInstantiator.INSTANCE, DefaultComponentTypeBuilder.class));
+    public ComponentTypeModelRuleExtractor(ModelSchemaStore schemaStore) {
+        super("component", ComponentSpec.class, BaseComponentSpec.class, ComponentTypeBuilder.class, schemaStore, new TypeBuilderFactory<ComponentSpec>() {
+            @Override
+            public TypeBuilderInternal<ComponentSpec> create(ModelSchema<? extends ComponentSpec> schema) {
+                return new DefaultComponentTypeBuilder(schema);
+            }
+        });
     }
 
     @Override
@@ -60,8 +64,8 @@ public class ComponentTypeModelRuleExtractor extends TypeModelRuleExtractor<Comp
     }
 
     public static class DefaultComponentTypeBuilder extends AbstractTypeBuilder<ComponentSpec> implements ComponentTypeBuilder<ComponentSpec> {
-        public DefaultComponentTypeBuilder() {
-            super(ComponentType.class);
+        public DefaultComponentTypeBuilder(ModelSchema<? extends ComponentSpec> schema) {
+            super(ComponentType.class, schema);
         }
     }
 
@@ -99,14 +103,14 @@ public class ComponentTypeModelRuleExtractor extends TypeModelRuleExtractor<Comp
             final Instantiator instantiator = serviceRegistry.get(Instantiator.class);
             final ProjectIdentifier projectIdentifier = ModelViews.assertType(inputs.get(1), ModelType.of(ProjectIdentifier.class)).getInstance();
             final ProjectSourceSet projectSourceSet = ModelViews.assertType(inputs.get(2), ModelType.of(ProjectSourceSet.class)).getInstance();
+            final NodeInitializerRegistry nodeInitializerRegistry = serviceRegistry.get(NodeInitializerRegistry.class);
             @SuppressWarnings("unchecked")
             Class<ComponentSpec> publicClass = (Class<ComponentSpec>) publicType.getConcreteClass();
             components.register(publicClass, descriptor, new BiFunction<ComponentSpec, String, MutableModelNode>() {
                 @Override
                 public ComponentSpec apply(String name, MutableModelNode modelNode) {
-                    FunctionalSourceSet componentSourceSet = instantiator.newInstance(DefaultFunctionalSourceSet.class, name, instantiator, projectSourceSet);
                     ComponentSpecIdentifier id = new DefaultComponentSpecIdentifier(projectIdentifier.getPath(), name);
-                    return BaseComponentSpec.create(implementationType.getConcreteClass(), id, modelNode, componentSourceSet, instantiator);
+                    return BaseComponentSpec.create(implementationType.getConcreteClass(), id, modelNode, projectSourceSet, instantiator, nodeInitializerRegistry);
                 }
             });
         }

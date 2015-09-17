@@ -16,13 +16,11 @@
 
 package org.gradle.play.integtest.fixtures
 
-import org.gradle.launcher.continuous.AbstractContinuousIntegrationTest
-import org.gradle.play.integtest.fixtures.app.PlayApp
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
+import org.gradle.integtests.fixtures.executer.ExecutionResult
+import org.gradle.launcher.continuous.Java7RequiringContinuousIntegrationTest
+import org.gradle.test.fixtures.file.TestFile
 
-@Requires(TestPrecondition.JDK7_OR_LATER)
-abstract class AbstractPlayContinuousBuildIntegrationTest extends AbstractContinuousIntegrationTest {
+abstract class AbstractPlayContinuousBuildIntegrationTest extends Java7RequiringContinuousIntegrationTest {
     abstract PlayApp getPlayApp()
     abstract RunningPlayApp getRunningApp()
 
@@ -31,7 +29,7 @@ abstract class AbstractPlayContinuousBuildIntegrationTest extends AbstractContin
         buildTimeout = 90
     }
 
-    def getPlayRunBuildFile() {
+    TestFile getPlayRunBuildFile() {
         buildFile
     }
 
@@ -41,7 +39,7 @@ abstract class AbstractPlayContinuousBuildIntegrationTest extends AbstractContin
         playRunBuildFile << """
             model {
                 tasks.runPlayBinary {
-                    httpPort = ${runningApp.selectPort()}
+                    httpPort = 0
                 }
             }
         """
@@ -51,14 +49,19 @@ abstract class AbstractPlayContinuousBuildIntegrationTest extends AbstractContin
         """
     }
 
-    def appIsRunningAndDeployed() {
+    void appIsRunningAndDeployed() {
+        runningApp.initialize(gradle)
         runningApp.verifyStarted()
         runningApp.verifyContent()
-        true
     }
 
-    def appIsStopped() {
+    void appIsStopped() {
         runningApp.verifyStopped()
-        true
+    }
+
+    @Override
+    protected ExecutionResult succeeds(String... tasks) {
+        executer.withArguments("--info")
+        return super.succeeds(tasks)
     }
 }

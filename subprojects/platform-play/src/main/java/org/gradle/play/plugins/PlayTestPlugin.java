@@ -36,6 +36,7 @@ import org.gradle.model.RuleSource;
 import org.gradle.platform.base.BinaryContainer;
 import org.gradle.play.PlayApplicationBinarySpec;
 import org.gradle.play.internal.PlayApplicationBinarySpecInternal;
+import org.gradle.play.internal.toolchain.PlayToolProvider;
 
 import java.io.File;
 import java.util.Arrays;
@@ -50,15 +51,17 @@ public class PlayTestPlugin extends RuleSource {
     void createTestTasks(ModelMap<Task> tasks, BinaryContainer binaryContainer, final PlayPluginConfigurations configurations,
                          final FileResolver fileResolver, final ProjectIdentifier projectIdentifier, @Path("buildDir") final File buildDir) {
         for (final PlayApplicationBinarySpecInternal binary : binaryContainer.withType(PlayApplicationBinarySpecInternal.class)) {
-            final FileCollection testCompileClasspath = getTestCompileClasspath(binary, configurations);
+            final PlayToolProvider playToolProvider = binary.getToolChain().select(binary.getTargetPlatform());
+            final FileCollection testCompileClasspath = getTestCompileClasspath(binary, playToolProvider, configurations);
 
             final String testCompileTaskName = String.format("compile%sTests", StringUtils.capitalize(binary.getName()));
-            // TODO:DAZ Model a test suite
             final File testSourceDir = fileResolver.resolve("test");
             final FileCollection testSources = new SimpleFileCollection(testSourceDir).getAsFileTree().matching(new PatternSet().include("**/*.scala", "**/*.java"));
             final File testClassesDir = new File(buildDir, String.format("%s/testClasses", binary.getName()));
             tasks.create(testCompileTaskName, PlatformScalaCompile.class, new Action<PlatformScalaCompile>() {
                 public void execute(PlatformScalaCompile scalaCompile) {
+                    scalaCompile.setDescription("Compiles the scala and java test sources for the '" + binary.getName() + "' binary.");
+
                     scalaCompile.setClasspath(testCompileClasspath);
 
                     scalaCompile.dependsOn(binary.getBuildTask());
@@ -80,6 +83,8 @@ public class PlayTestPlugin extends RuleSource {
             final File binaryBuildDir = new File(buildDir, binary.getName());
             tasks.create(testTaskName, Test.class, new Action<Test>() {
                 public void execute(Test test) {
+                    test.setDescription("Runs tests for the '" + binary.getName() + "' binary.");
+
                     test.setClasspath(getRuntimeClasspath(testClassesDir, testCompileClasspath));
 
                     test.setTestClassesDir(testClassesDir);
@@ -95,8 +100,8 @@ public class PlayTestPlugin extends RuleSource {
         }
     }
 
-    private FileCollection getTestCompileClasspath(PlayApplicationBinarySpec binary, PlayPluginConfigurations configurations) {
-        return new SimpleFileCollection(binary.getJarFile()).plus(configurations.getPlayTest().getFileCollection());
+    private FileCollection getTestCompileClasspath(PlayApplicationBinarySpec binary, PlayToolProvider playToolProvider, PlayPluginConfigurations configurations) {
+        return new SimpleFileCollection(binary.getJarFile()).plus(configurations.getPlayTest().getAllArtifacts());
     }
 
     private FileCollection getRuntimeClasspath(File testClassesDir, FileCollection testCompileClasspath) {

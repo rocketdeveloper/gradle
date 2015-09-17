@@ -20,7 +20,6 @@ import org.gradle.api.Project
 import org.gradle.api.tasks.TaskDependencyMatchers
 import org.gradle.language.assembler.AssemblerSourceSet
 import org.gradle.language.assembler.tasks.Assemble
-import org.gradle.language.base.FunctionalSourceSet
 import org.gradle.model.ModelMap
 import org.gradle.model.internal.core.ModelPath
 import org.gradle.model.internal.type.ModelTypes
@@ -52,7 +51,7 @@ class AssemblerPluginTest extends Specification {
         then:
         def components = realizeComponents()
         def exe = components.exe
-        exe.sources instanceof FunctionalSourceSet
+        exe.sources instanceof ModelMap
         exe.sources.asm instanceof AssemblerSourceSet
         exe.sources.asm.source.srcDirs == [project.file("src/exe/asm")] as Set
 

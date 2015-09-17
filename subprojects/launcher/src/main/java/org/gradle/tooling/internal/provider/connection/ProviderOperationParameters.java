@@ -16,18 +16,21 @@
 package org.gradle.tooling.internal.provider.connection;
 
 import org.gradle.api.logging.LogLevel;
+import org.gradle.tooling.internal.protocol.InternalBuildProgressListener;
 import org.gradle.tooling.internal.protocol.InternalLaunchable;
 import org.gradle.tooling.internal.protocol.ProgressListenerVersion1;
-import org.gradle.tooling.internal.protocol.InternalBuildProgressListener;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Defines what information is needed on the provider side regarding the build operation.
+ *
+ * This is used as an adapter over the {@link org.gradle.tooling.internal.consumer.parameters.ConsumerOperationParameters} instance provided by the consumer.
  */
 public interface ProviderOperationParameters {
     boolean getVerboseLogging(boolean defaultValue);
@@ -71,4 +74,6 @@ public interface ProviderOperationParameters {
     List<String> getTasks();
 
     List<InternalLaunchable> getLaunchables(List<InternalLaunchable> defaultLaunchables);
+
+    List<URI> getClasspath(List<URI> classpath);
 }

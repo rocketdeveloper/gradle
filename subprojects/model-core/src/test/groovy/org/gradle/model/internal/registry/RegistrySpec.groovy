@@ -33,6 +33,10 @@ class RegistrySpec extends Specification {
             super(toBinder(creationPath, type))
         }
 
+        TestNode(CreatorRuleBinder creatorBinder) {
+            super(creatorBinder)
+        }
+
         private static CreatorRuleBinder toBinder(String creationPath, Class<?> type) {
             def creator = ModelCreators.of(ModelPath.path(creationPath), BiActions.doNothing()).descriptor("test").withProjection(new UnmanagedModelProjection(ModelType.of(type))).build()
             def subject = new BindingPredicate()
@@ -41,16 +45,10 @@ class RegistrySpec extends Specification {
         }
 
         @Override
-        ModelNodeInternal getTarget() {
-            return this
-        }
-
-        @Override
         Iterable<? extends ModelNodeInternal> getLinks() {
             return links
         }
 
-        @Override
         ModelNodeInternal addLink(ModelNodeInternal node) {
             links << node
             return node
@@ -117,7 +115,7 @@ class RegistrySpec extends Specification {
         }
 
         @Override
-        MutableModelNode getLink(String name) {
+        ModelNodeInternal getLink(String name) {
             return null
         }
 
@@ -187,7 +185,7 @@ class RegistrySpec extends Specification {
         }
 
         @Override
-        void realize() {
+        void ensureAtLeast(ModelNode.State state) {
 
         }
 

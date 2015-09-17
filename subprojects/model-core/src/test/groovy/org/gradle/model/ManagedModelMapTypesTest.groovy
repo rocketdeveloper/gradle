@@ -30,22 +30,12 @@ class ManagedModelMapTypesTest extends Specification {
     @Managed
     abstract static class ManagedThing {}
 
-    def "type must implement named"() {
+    def "type doesn't need to implement named"() {
         when:
         schemaStore.getSchema(ModelTypes.modelMap(ManagedThing))
 
         then:
-        def e = thrown InvalidManagedModelElementTypeException
-        e.message == "Invalid managed model type $ModelMap.name<$ManagedThing.name>: cannot create a model map of type $ManagedThing.name as it does not implement $Named.name."
-    }
-
-    def "type must be managed struct"() {
-        when:
-        schemaStore.getSchema(ModelTypes.modelMap(String))
-
-        then:
-        def e = thrown InvalidManagedModelElementTypeException
-        e.message == "Invalid managed model type $ModelMap.name<$String.name>: cannot create a model map of type $String.name as it is not a $Managed.name type."
+        noExceptionThrown()
     }
 
     def "must have type param"() {

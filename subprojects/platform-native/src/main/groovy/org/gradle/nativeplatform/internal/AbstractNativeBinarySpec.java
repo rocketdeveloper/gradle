@@ -29,6 +29,7 @@ import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 import org.gradle.nativeplatform.toolchain.internal.PreCompiledHeader;
+import org.gradle.platform.base.ComponentSpec;
 import org.gradle.platform.base.binary.BaseBinarySpec;
 import org.gradle.platform.base.internal.BinaryBuildAbility;
 import org.gradle.platform.base.internal.BinaryNamingScheme;
@@ -59,8 +60,8 @@ public abstract class AbstractNativeBinarySpec extends BaseBinarySpec implements
         return component;
     }
 
-    public void setComponent(NativeComponentSpec component) {
-        this.component = component;
+    public void setComponent(ComponentSpec component) {
+        this.component = (NativeComponentSpec) component;
     }
 
     public Flavor getFlavor() {
@@ -112,7 +113,7 @@ public abstract class AbstractNativeBinarySpec extends BaseBinarySpec implements
     }
 
     public Collection<NativeDependencySet> getLibs() {
-        return resolve(getSource().withType(DependentSourceSet.class)).getAllResults();
+        return resolve(getInputs().withType(DependentSourceSet.class)).getAllResults();
     }
 
     public Collection<NativeDependencySet> getLibs(DependentSourceSet sourceSet) {
@@ -124,14 +125,14 @@ public abstract class AbstractNativeBinarySpec extends BaseBinarySpec implements
     }
 
     public Collection<NativeLibraryBinary> getDependentBinaries() {
-        return resolve(getSource().withType(DependentSourceSet.class)).getAllLibraryBinaries();
+        return resolve(getInputs().withType(DependentSourceSet.class)).getAllLibraryBinaries();
     }
 
     public Map<File, PreCompiledHeader> getPrefixFileToPCH() {
         return prefixFileToPCH;
     }
 
-    private NativeBinaryResolveResult resolve(Collection<? extends DependentSourceSet> sourceSets) {
+    private NativeBinaryResolveResult resolve(Iterable<? extends DependentSourceSet> sourceSets) {
         Set<? super Object> allLibs = new LinkedHashSet<Object>(libs);
         for (DependentSourceSet dependentSourceSet : sourceSets) {
             allLibs.addAll(dependentSourceSet.getLibs());

@@ -29,17 +29,19 @@ import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal
 import org.gradle.api.internal.artifacts.dsl.ModuleReplacementsData
 import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager
 import org.gradle.api.internal.artifacts.ivyservice.DefaultLenientConfiguration
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolverProvider
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.DefaultResolvedArtifactsBuilder
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactsGraphVisitor
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.CompositeDependencyArtifactsVisitor
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.CompositeDependencyGraphVisitor
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphBuilder
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.DefaultConflictHandler
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.DefaultResolvedArtifactsBuilder
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.DefaultResolvedConfigurationBuilder
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.TransientConfigurationResultsBuilder
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.TransientConfigurationResultsLoader
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.*
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedLocalComponentsResultBuilder
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedLocalComponentsResultGraphVisitor
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.DummyBinaryStore
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.DummyStore
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ResolutionResultBuilder
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ResolutionResultDependencyGraphVisitor
 import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact
 import org.gradle.api.internal.tasks.DefaultTaskDependency
 import org.gradle.api.specs.Spec
@@ -75,35 +77,39 @@ class DependencyGraphBuilderTest extends Specification {
     def moduleResolver = Mock(ResolveContextToComponentResolver)
     def dependencyToConfigurationResolver = new DefaultDependencyToConfigurationResolver()
     def moduleReplacements = Mock(ModuleReplacementsData)
-    def resolverProvider = Mock(ResolverProvider)
     DependencyGraphBuilder builder
 
     def setup() {
         _ * configuration.name >> 'root'
         _ * configuration.path >> 'root'
         _ * moduleResolver.resolve(_, _) >> { it[1].resolved(root) }
-        _ * resolverProvider.artifactResolver >> artifactResolver
-        _ * resolverProvider.componentIdResolver >> idResolver
-        _ * resolverProvider.componentResolver >> metaDataResolver
-
         _ * artifactResolver.resolveModuleArtifacts(_, _, _,) >> { ComponentResolveMetaData module, ComponentUsage context, BuildableArtifactSetResolveResult result ->
             result.resolved(module.getConfiguration(context.configurationName).artifacts)
         }
 
-        builder = new DependencyGraphBuilder(resolverProvider, moduleResolver, new DefaultConflictHandler(conflictResolver, moduleReplacements), dependencyToConfigurationResolver)
+        builder = new DependencyGraphBuilder(idResolver, metaDataResolver, moduleResolver, dependencyToConfigurationResolver, new DefaultConflictHandler(conflictResolver, moduleReplacements))
     }
 
     private DefaultLenientConfiguration resolve() {
         def transientConfigurationResultsBuilder = new TransientConfigurationResultsBuilder(new DummyBinaryStore(), new DummyStore())
         def modelBuilder = new DefaultResolvedConfigurationBuilder(transientConfigurationResultsBuilder)
-        def artifactsBuilder = new DefaultResolvedArtifactsBuilder()
+        def configurationResultVisitor = new ResolvedConfigurationDependencyGraphVisitor(modelBuilder)
 
-        builder.resolve(configuration, resolutionResultBuilder, modelBuilder, artifactsBuilder, projectModelBuilder)
+        def resolutionResultVisitor = new ResolutionResultDependencyGraphVisitor(resolutionResultBuilder)
+        def projectComponentsVisitor = new ResolvedLocalComponentsResultGraphVisitor(projectModelBuilder)
+
+        def artifactsBuilder = new DefaultResolvedArtifactsBuilder()
+        def artifactsGraphVisitor = new ResolvedArtifactsGraphVisitor(new CompositeDependencyArtifactsVisitor(artifactsBuilder, configurationResultVisitor), artifactResolver)
+
+        def graphVisitor = new CompositeDependencyGraphVisitor(configurationResultVisitor, resolutionResultVisitor, projectComponentsVisitor, artifactsGraphVisitor)
+
+        builder.resolve(configuration, graphVisitor)
 
         def graphResults = modelBuilder.complete()
         def artifactResults = artifactsBuilder.resolve()
 
-        new DefaultLenientConfiguration(configuration, Stub(CacheLockingManager), graphResults, artifactResults, new TransientConfigurationResultsLoader(transientConfigurationResultsBuilder, graphResults, artifactResults))
+        new DefaultLenientConfiguration(configuration, Stub(CacheLockingManager), graphResults.getUnresolvedDependencies(),
+                artifactResults, new TransientConfigurationResultsLoader(transientConfigurationResultsBuilder, graphResults, artifactResults))
     }
 
     def "does not resolve a given module selector more than once"() {
@@ -944,7 +950,7 @@ class DependencyGraphBuilderTest extends Specification {
 //        def metaData = new MutableModuleMetaData(descriptor)
 //        metaData.descriptor.addConfiguration(new org.apache.ivy.core.module.descriptor.Configuration('default', org.apache.ivy.core.module.descriptor.Configuration.Visibility.PUBLIC, null, [] as String[], true, null))
 //        descriptor.addArtifact('default', new DefaultArtifact(descriptor.moduleRevisionId, new Date(), "art1", "art", "zip"))
-        return metaData.toResolveMetaData()
+        return metaData
     }
 
     def project(String name, String revision = '1.0', List<String> extraConfigs = []) {
@@ -954,7 +960,7 @@ class DependencyGraphBuilderTest extends Specification {
             metaData.addConfiguration(config, "${config}Config", ["default"] as Set<String>, ["default", config] as Set<String>, true, true, new DefaultTaskDependency())
         }
         metaData.addArtifacts("default", [new DefaultPublishArtifact("art1", "zip", "art", null, new Date(), new File("art1.zip"))])
-        return metaData.toResolveMetaData()
+        return metaData
     }
 
     def traverses(Map<String, ?> args = [:], def from, ComponentResolveMetaData to) {

@@ -18,28 +18,24 @@ package org.gradle.api.internal.artifacts;
 
 import org.gradle.StartParameter;
 import org.gradle.api.internal.ClassPathRegistry;
-import org.gradle.api.internal.artifacts.component.ComponentIdentifierFactory;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyFactory;
 import org.gradle.api.internal.artifacts.ivyservice.*;
 import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.ModuleVersionsCache;
 import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.SingleFileBackedModuleVersionsCache;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.DelegatingResolverProvider;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolveIvyFactory;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolverProvider;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.StartParameterResolutionOverride;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.*;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.memcache.InMemoryCachedRepositoryFactory;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.*;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.DefaultModuleArtifactsCache;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.DefaultModuleMetaDataCache;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.ModuleArtifactsCache;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.ModuleMetaDataCache;
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ResolveLocalComponentFactory;
+import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ConfigurationLocalComponentConverter;
 import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies.DependencyDescriptorFactory;
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.DefaultProjectComponentRegistry;
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.DefaultProjectPublicationRegistry;
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectDependencyResolver;
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectPublicationRegistry;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.DefaultDependencyResolver;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.DefaultArtifactDependencyResolver;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.store.ResolutionResultsStoreFactory;
 import org.gradle.api.internal.artifacts.mvnsettings.*;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory;
@@ -210,28 +206,17 @@ class DependencyManagementBuildScopeServices {
                                                                 DependencyDescriptorFactory dependencyDescriptorFactory,
                                                                 CacheLockingManager cacheLockingManager,
                                                                 IvyContextManager ivyContextManager,
-                                                                ResolutionResultsStoreFactory resolutionResultsStoreFactory,
                                                                 VersionComparator versionComparator,
-                                                                StartParameter startParameter,
-                                                                ComponentIdentifierFactory componentIdentifierFactory,
                                                                 ServiceRegistry serviceRegistry) {
-        DefaultDependencyResolver resolver = new DefaultDependencyResolver(
+        DefaultArtifactDependencyResolver resolver = new DefaultArtifactDependencyResolver(
             serviceRegistry,
             resolveIvyFactory,
             dependencyDescriptorFactory,
             cacheLockingManager,
             ivyContextManager,
-            resolutionResultsStoreFactory,
-            versionComparator,
-            startParameter.isBuildProjectDependencies()
+            versionComparator
         );
-        return new ErrorHandlingArtifactDependencyResolver(
-            new ShortcircuitEmptyConfigsArtifactDependencyResolver(
-                new SelfResolvingDependencyResolver(
-                    new CacheLockingArtifactDependencyResolver(
-                        cacheLockingManager,
-                        resolver)),
-                componentIdentifierFactory));
+        return new CacheLockingArtifactDependencyResolver(cacheLockingManager, resolver);
     }
 
     ResolutionResultsStoreFactory createResolutionResultsStoreFactory(TemporaryFileProvider temporaryFileProvider) {
@@ -242,13 +227,31 @@ class DependencyManagementBuildScopeServices {
         return new DefaultProjectPublicationRegistry();
     }
 
-    ProjectDependencyResolver createProjectDependencyResolver(ProjectRegistry<ProjectInternal> projectRegistry, ResolveLocalComponentFactory publishModuleDescriptorConverter) {
+    ProjectDependencyResolver createProjectDependencyResolver(ProjectRegistry<ProjectInternal> projectRegistry, ConfigurationLocalComponentConverter publishModuleDescriptorConverter) {
         return new ProjectDependencyResolver(new DefaultProjectComponentRegistry(
             publishModuleDescriptorConverter,
             projectRegistry));
     }
 
-    ResolverProvider createProjectResolverProvider(ProjectDependencyResolver resolver) {
-        return DelegatingResolverProvider.of(resolver);
+    ResolverProviderFactory createProjectResolverProviderFactory(final ProjectDependencyResolver resolver) {
+        return new ProjectResolverProviderFactory(resolver);
+    }
+
+    private static class ProjectResolverProviderFactory implements ResolverProviderFactory {
+        private final ProjectDependencyResolver resolver;
+
+        public ProjectResolverProviderFactory(ProjectDependencyResolver resolver) {
+            this.resolver = resolver;
+        }
+
+        @Override
+        public boolean canCreate(ResolveContext context) {
+            return true;
+        }
+
+        @Override
+        public ComponentResolvers create(ResolveContext context) {
+            return DelegatingComponentResolvers.of(resolver);
+        }
     }
 }

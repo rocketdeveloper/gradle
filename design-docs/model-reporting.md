@@ -48,13 +48,56 @@ Biggest one so far
 - Order is important
 - some of them are internal/mechanical?
 
+# Story: Model report shows more concise name for rule source method rules
+
+- Change descriptor for such rules to use simple type name, and no parameters
+- Ensure overloading of rule methods is forbidden (so that dropping the params doesn't make it ambiguous)
+- Ensure that rules methods from enclosed classes include the top level class in the description (e.g. `ComponentModelPlugin$Rules`)
+
+# Story: DSL based rules include relative path to script, from project root
+When we toggle `org.gradle.model.dsl` we provide better descriptors for DSL rules.
+Currently, we include the absolute path to the script containing the rule.
+- This should be relative to the project root - the path to the script defining the rule, relative to the “root project dir” (i.e. `Project.getRootDir()`).
+- Must include the relative path, line number and column number to 'applied' scripts. i.e. `apply from: '../../../someScript.gradle'`
+
+### Test scenarios
+ - model dsl from the main build script but is named something other than `build.gradle`
+ - apply from a script somewhere inside the project's root dir
+ - apply from a script via http
+ - apply from a script somewhere outside the project's root dir
+
+# Story: Rule binding failure errors use consistent terminology
+
+See ModelRuleBindingFailureIntegrationTest.
+
+Two problems:
+
+1. Use of `mutable` & `immutable`: should be `subject`, `inputs`
+1. Use of `+` for “did bind” and `-` for “did not bind” is too subtle - needs to be clearer what is happening
+
+The of error messages arising from the rules with unbound subjects or inputs is as follows:
+```
+The following model rules could not be applied due to unsatisfied dependencies:
+  MyPlugin$Rules#mutateThing2
+    Subject:
+      foo.nar MyPlugin$MyThing2 (parameter 1) [UNBOUND]
+        suggestions: foo.bar
+    Inputs:
+      foo.narre MyPlugin$MyThing3 (parameter 2) [UNBOUND]
+        suggestions: foo.bar. some
+      foo.narre MyPlugin$MyThing4 (parameter 3)
+
+[UNBOUND] - indicates that the subject or input could not be found (i.e. the reference could not be bound)
+see: http://linktodocs
+```
+
+# Backlog
 
 # Story: Model report shows hidden nodes
 
 Add a 'show hidden elements' command-line option to show hidden nodes.
 
 `--all`
-
 
 # Story: Add report that shows dependencies between model elements
 
@@ -66,72 +109,3 @@ Improve the display value for rules defined in plugins, to show the plugin id in
 method descriptor.
 
 Perhaps use a 'show details' command-line option to enable display of the method descriptor.
-
-## Potential Layouts
-
-```bash
-    component(type: org.gradle.api.reporting.components.ComponentReport, readonly:true, value: task ':components')
-        child(type: org.gradle.api.reporting.components.ComponentReport, readonly:true, value: task ':components')
-            grandchild(type: org.gradle.api.reporting.components.ComponentReport, readonly:true, value: task ':components')
-        child2(type: org.gradle.api.reporting.components.ComponentReport, readonly:true, value: task ':components')
-```
-
-```bash
-   + component
-          | type:       org.gradle.api.reporting.components.ComponentReport |
-          | readonly:   true |
-          | value:      task ':components'|
-          | creator:    the model machine |
-          | rules:
-             + rule1 //pluginid/script id - we don't have this yet
-                    |dependencies:  |
-                        - input1
-                        - input2
-                        - input3
-             + rule2
-             + rule3
-
-          [rule1, rule2, rule3]|
-          |dependencies |
-        + child
-              | type:       org.gradle.api.reporting.components.ComponentReport |
-              | readonly:   true |
-              | value:      task ':components'|
-              | creator:    the model machine |
-            + grandChild
-                  | type:       org.gradle.api.reporting.components.ComponentReport |
-                  | readonly:   true |
-                  | value:      task ':components'|
-                  | creator:    the model machine |
-        + child2
-               | type:       org.gradle.api.reporting.components.ComponentReport |
-               | readonly:   true |
-               | value:      task ':components'|
-               | creator:    the model machine |
-```
-
-
-
-```bash
-   + component
-          { type: org.gradle.api.reporting.components.ComponentReport }
-          { type: org.gradle.api.reporting.components.ComponentReport }
-          { readonly: true }
-          { value: task ':components' }
-          { creator: the model machine }
-        + child
-              { type: org.gradle.api.reporting.components.ComponentReport }
-              { type: org.gradle.api.reporting.components.ComponentReport }
-              { readonly: true }
-              { value: task ':components' }
-            + grandChild
-                  { type: org.gradle.api.reporting.components.ComponentReport }
-                  { type: org.gradle.api.reporting.components.ComponentReport }
-                  { readonly: true }
-                  { value: task ':components' }
-        + child2
-               { type: org.gradle.api.reporting.components.ComponentReport }
-               { type: org.gradle.api.reporting.components.ComponentReport }
-               { readonly: true }
-               { value: task ':components' }
-```

@@ -16,16 +16,16 @@
 
 package org.gradle.play.integtest.continuous
 
-import org.gradle.play.integtest.fixtures.AbstractPlayContinuousBuildIntegrationTest
+import org.gradle.play.integtest.fixtures.AbstractMultiVersionPlayContinuousBuildIntegrationTest
 import org.gradle.play.integtest.fixtures.MultiProjectRunningPlayApp
 import org.gradle.play.integtest.fixtures.RunningPlayApp
 import org.gradle.play.integtest.fixtures.app.BasicPlayApp
-import org.gradle.play.integtest.fixtures.app.PlayApp
+import org.gradle.play.integtest.fixtures.PlayApp
 import org.gradle.play.integtest.fixtures.app.PlayMultiProject
 import org.gradle.test.fixtures.file.TestFile
 
 
-class PlayMultiProjectContinuousBuildIntegrationTest extends AbstractPlayContinuousBuildIntegrationTest {
+class PlayMultiProjectContinuousBuildIntegrationTest extends AbstractMultiVersionPlayContinuousBuildIntegrationTest {
     PlayApp playApp = new PlayMultiProject()
     PlayApp childApp = new BasicPlayApp()
     TestFile childDirectory = testDirectory.file('child')
@@ -53,8 +53,13 @@ class PlayMultiProjectContinuousBuildIntegrationTest extends AbstractPlayContinu
         childDirectory.file('build.gradle') << """
             model {
                 tasks.runPlayBinary {
-                    httpPort = ${runningChildApp.selectPort()}
+                    httpPort = 0
                 }
+            }
+
+            // ensure that child run task always runs second
+            tasks.withType(PlayRun) {
+                dependsOn project(':primary').tasks.withType(PlayRun)
             }
         """
         file('settings.gradle') << """
@@ -84,8 +89,7 @@ class PlayMultiProjectContinuousBuildIntegrationTest extends AbstractPlayContinu
         succeeds()
 
         when:
-        println "sending ctrl-d"
-        control_D()
+        sendEOT()
 
         then:
         cancelsAndExits()
@@ -96,13 +100,82 @@ class PlayMultiProjectContinuousBuildIntegrationTest extends AbstractPlayContinu
     }
 
     def childAppIsRunningAndDeployed() {
-        runningChildApp.verifyStarted()
+        runningChildApp.initialize(gradle)
+        runningChildApp.verifyStarted('', 1)
         runningChildApp.verifyContent()
         true
     }
 
     def childAppIsStopped() {
+        runningChildApp.requireHttpPort(1)
         runningChildApp.verifyStopped()
         true
+    }
+
+    def "show build failures in play apps in multiple projects in multiproject continuous build" () {
+        childApp.writeSources(childDirectory)
+        childDirectory.file('build.gradle') << """
+            model {
+                tasks.runPlayBinary {
+                    httpPort = 0
+                }
+            }
+        """
+        file('settings.gradle') << """
+            include ':child'
+        """
+
+        when:
+        succeeds(":primary:runPlayBinary", ":child:runPlayBinary")
+
+        then:
+        appIsRunningAndDeployed()
+        childAppIsRunningAndDeployed()
+
+        when:
+        addBadJava("primary/app")
+
+        then:
+        fails()
+        notExecuted(":primary:runPlayBinary")
+        errorPageHasTaskFailure(":primary:compilePlayBinaryScala")
+        childErrorPageHasTaskFailure(":primary:compilePlayBinaryScala")
+
+        when:
+        fixBadJava("primary/app")
+        then:
+        succeeds()
+        appIsRunningAndDeployed()
+        childAppIsRunningAndDeployed()
+    }
+
+
+    def addBadJava(path) {
+        file("$path/models/NewType.java") << """
+package models;
+
+public class NewType {
+"""
+    }
+
+    def fixBadJava(path) {
+        file("$path/models/NewType.java") << """
+}
+"""
+    }
+
+    private errorPageHasTaskFailure(task) {
+        def error = runningApp.playUrlError()
+        assert error.httpCode == 500
+        assert error.text.contains("Gradle Build Failure")
+        assert error.text.contains("Execution failed for task &#x27;$task&#x27;.")
+        error
+    }
+    private childErrorPageHasTaskFailure(task) {
+        def error = runningChildApp.playUrlError()
+        assert error.httpCode == 500
+        assert error.text.contains("Gradle Build Failure")
+        assert error.text.contains("Execution failed for task &#x27;$task&#x27;.")
+        error
     }
 }

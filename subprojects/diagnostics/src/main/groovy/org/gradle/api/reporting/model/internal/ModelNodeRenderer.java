@@ -17,7 +17,10 @@
 package org.gradle.api.reporting.model.internal;
 
 import com.google.common.base.Optional;
+import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import org.gradle.api.tasks.diagnostics.internal.text.TextReportBuilder;
 import org.gradle.logging.StyledTextOutput;
 import org.gradle.model.internal.core.ModelNode;
@@ -26,7 +29,6 @@ import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.type.ModelType;
 import org.gradle.reporting.ReportRenderer;
 
-import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -50,8 +52,8 @@ public class ModelNodeRenderer extends ReportRenderer<ModelNode, TextReportBuild
         } else {
             printNodeName(model, styledTextoutput);
             maybePrintType(model, styledTextoutput);
-            printOrigin(model, styledTextoutput);
             maybePrintValue(model, styledTextoutput);
+            printCreator(model, styledTextoutput);
             maybePrintRules(model, styledTextoutput);
         }
 
@@ -67,11 +69,11 @@ public class ModelNodeRenderer extends ReportRenderer<ModelNode, TextReportBuild
         styledTextoutput.println();
     }
 
-    public void printOrigin(ModelNode model, StyledTextOutput styledTextoutput) {
+    public void printCreator(ModelNode model, StyledTextOutput styledTextoutput) {
         ModelRuleDescriptor descriptor = model.getDescriptor();
         StringBuffer buffer = new StringBuffer();
         descriptor.describeTo(buffer);
-        printNodeAttribute(styledTextoutput, "Origin:", buffer.toString());
+        printNodeAttribute(styledTextoutput, "Creator:", buffer.toString());
     }
 
     public void maybePrintType(ModelNode model, StyledTextOutput styledTextoutput) {
@@ -91,9 +93,9 @@ public class ModelNodeRenderer extends ReportRenderer<ModelNode, TextReportBuild
     }
 
     private void maybePrintRules(ModelNode model, StyledTextOutput styledTextoutput) {
-        List<ModelRuleDescriptor> executedRules = model.getExecutedRules();
-        if (executedRules.size() > 0) {
-            printNestedAttributeTitle(styledTextoutput, "Rules: ");
+        Iterable<ModelRuleDescriptor> executedRules = uniqueExecutedRulesExcludingCreator(model);
+        if (!Iterables.isEmpty(executedRules)) {
+            printNestedAttributeTitle(styledTextoutput, "Rules:");
             for (ModelRuleDescriptor ruleDescriptor : executedRules) {
                 printNestedAttribute(styledTextoutput, "⤷ " + ruleDescriptor.toString());
             }
@@ -106,19 +108,28 @@ public class ModelNodeRenderer extends ReportRenderer<ModelNode, TextReportBuild
     }
 
     private void printNestedAttributeTitle(StyledTextOutput styledTextoutput, String title) {
-        styledTextoutput.withStyle(Identifier).format("      | %s |", title);
+        styledTextoutput.withStyle(Identifier).format("      | %s", title);
         styledTextoutput.println();
     }
 
     public void printNodeAttribute(StyledTextOutput styledTextoutput, String label, String value) {
         styledTextoutput.withStyle(Identifier).format("      | %s", attributeLabel(label));
-        styledTextoutput.withStyle(Description).format(" \t%s |", value);
-        //Ideally the closing '|' would be the same style as the opening one but somehow it ends up placed in the middle of the line when we style for a 3rd time.
+        styledTextoutput.withStyle(Description).format(" \t%s", value);
         styledTextoutput.println();
     }
 
 
     private String attributeLabel(String label) {
         return Strings.padEnd(label, LABEL_LENGTH, ' ');
+    }
+
+    static Iterable<ModelRuleDescriptor> uniqueExecutedRulesExcludingCreator(final ModelNode model) {
+        Iterable filtered = Iterables.filter(model.getExecutedRules(), new Predicate<ModelRuleDescriptor>() {
+            @Override
+            public boolean apply(ModelRuleDescriptor input) {
+                return !input.equals(model.getDescriptor());
+            }
+        });
+        return ImmutableSet.copyOf(filtered);
     }
 }

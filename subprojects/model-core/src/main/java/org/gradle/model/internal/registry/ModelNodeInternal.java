@@ -19,9 +19,7 @@ package org.gradle.model.internal.registry;
 import com.google.common.base.Joiner;
 import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
-import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Multimaps;
 import com.google.common.collect.Sets;
 import org.gradle.api.Nullable;
 import org.gradle.model.internal.core.*;
@@ -30,8 +28,6 @@ import org.gradle.model.internal.type.ModelType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Set;
 
@@ -51,7 +47,7 @@ abstract class ModelNodeInternal implements MutableModelNode {
     private final Set<ModelNodeInternal> dependents = Sets.newHashSet();
     private ModelNode.State state = ModelNode.State.Known;
     private boolean hidden;
-    private List<ModelRuleDescriptor> executedRules = Lists.newArrayList();
+    private final List<ModelRuleDescriptor> executedRules = Lists.newArrayList();
 
     public ModelNodeInternal(CreatorRuleBinder creatorBinder) {
         this.creatorBinder = creatorBinder;
@@ -98,12 +94,8 @@ abstract class ModelNodeInternal implements MutableModelNode {
         return creatorBinder.getCreator().isEphemeral();
     }
 
-    private static ListMultimap<ModelNode.State, MutatorRuleBinder<?>> createMutatorsMap() {
-        return Multimaps.newListMultimap(new EnumMap<ModelNode.State, Collection<MutatorRuleBinder<?>>>(ModelNode.State.class), LIST_SUPPLIER);
-    }
-
     public void notifyFired(RuleBinder binder) {
-        assert binder.isBound();
+        assert binder.isBound() : "RuleBinder must be in a bound state";
         for (ModelBinding inputBinding : binder.getInputBindings()) {
             ModelNodeInternal node = inputBinding.getNode();
             dependencies.add(node);
@@ -140,9 +132,9 @@ abstract class ModelNodeInternal implements MutableModelNode {
         return state.mutable;
     }
 
-    public boolean canApply(ModelNode.State targetState) {
-        return state.compareTo(targetState) < 0;
-    }
+    @Nullable
+    @Override
+    public abstract ModelNodeInternal getLink(String name);
 
     public ModelPromise getPromise() {
         return creatorBinder.getCreator().getPromise();
@@ -157,29 +149,7 @@ abstract class ModelNodeInternal implements MutableModelNode {
         return getPath().toString();
     }
 
-    public abstract ModelNodeInternal getTarget();
-
     public abstract Iterable<? extends ModelNodeInternal> getLinks();
-
-    public abstract ModelNodeInternal addLink(ModelNodeInternal node);
-
-    @Override
-    public <T> ModelView<? extends T> asReadOnly(ModelType<T> type, @Nullable ModelRuleDescriptor ruleDescriptor) {
-        ModelView<? extends T> modelView = getAdapter().asReadOnly(type, this, ruleDescriptor);
-        if (modelView == null) {
-            throw new IllegalStateException("Model node " + getPath() + " cannot be expressed as a read-only view of type " + type);
-        }
-        return modelView;
-    }
-
-    @Override
-    public <T> ModelView<? extends T> asWritable(ModelType<T> type, ModelRuleDescriptor ruleDescriptor, List<ModelView<?>> inputs) {
-        ModelView<? extends T> modelView = getAdapter().asWritable(type, this, ruleDescriptor, inputs);
-        if (modelView == null) {
-            throw new IllegalStateException("Model node " + getPath() + " cannot be expressed as a mutable view of type " + type);
-        }
-        return modelView;
-    }
 
     public void reset() {
         if (getState() != State.Known) {
@@ -206,7 +176,7 @@ abstract class ModelNodeInternal implements MutableModelNode {
     @Override
     public Optional<String> getValueDescription() {
         this.ensureUsable();
-        return this.getAdapter().getValueDescription(this);
+        return getAdapter().getValueDescription(this);
     }
 
     @Override
@@ -226,5 +196,15 @@ abstract class ModelNodeInternal implements MutableModelNode {
     @Override
     public List<ModelRuleDescriptor> getExecutedRules() {
         return this.executedRules;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return this == obj;
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 }

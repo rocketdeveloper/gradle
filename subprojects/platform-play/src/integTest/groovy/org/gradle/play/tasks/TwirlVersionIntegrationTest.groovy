@@ -17,6 +17,8 @@
 package org.gradle.play.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.play.internal.DefaultPlayPlatform
+import static org.gradle.play.integtest.fixtures.Repositories.*
 
 class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
     def baseBuildFile = """
@@ -24,13 +26,7 @@ class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
             id 'play-application'
         }
 
-        repositories{
-            jcenter()
-            maven{
-                name = "typesafe-maven-release"
-                url = "https://repo.typesafe.com/typesafe/maven-releases"
-            }
-        }
+        ${PLAY_REPOSITORES}
     """
 
     def setup() {
@@ -51,7 +47,7 @@ class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
         file("build/playBinary/src/compilePlayBinaryTwirlTemplates/views/html/index.template.scala").exists()
 
         when:
-        withPlayVersion("2.3.7")
+        withPlayVersion(DefaultPlayPlatform.DEFAULT_PLAY_VERSION)
         succeeds "playBinary"
 
         then:
@@ -75,7 +71,7 @@ class TwirlVersionIntegrationTest extends AbstractIntegrationSpec {
         file("build/playBinary/src/compilePlayBinaryTwirlTemplates/views/html/index.template.scala").exists()
 
         when:
-        withPlayVersion("2.3.7")
+        withPlayVersion(DefaultPlayPlatform.DEFAULT_PLAY_VERSION)
         succeeds "playBinary"
 
         then:

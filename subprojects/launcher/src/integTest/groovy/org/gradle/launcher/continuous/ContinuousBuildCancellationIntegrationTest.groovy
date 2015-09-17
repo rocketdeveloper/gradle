@@ -16,9 +16,9 @@
 
 package org.gradle.launcher.continuous
 
+import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.TextUtil
-import spock.util.concurrent.PollingConditions
 
 class ContinuousBuildCancellationIntegrationTest extends Java7RequiringContinuousIntegrationTest {
 
@@ -44,10 +44,10 @@ class ContinuousBuildCancellationIntegrationTest extends Java7RequiringContinuou
         if (flushBefore) {
             stdinPipe.flush()
         }
-        control_D()
+        sendEOT()
 
         then:
-        new PollingConditions(initialDelay: 0.5).within(buildTimeout) {
+        ConcurrentTestUtil.poll(buildTimeout, 0.5) {
             assert !gradle.isRunning()
         }
 
@@ -92,10 +92,10 @@ class ContinuousBuildCancellationIntegrationTest extends Java7RequiringContinuou
             succeeds()
         }
         and:
-        control_D()
+        sendEOT()
 
         then:
-        new PollingConditions(initialDelay: 0.5).within(buildTimeout) {
+        ConcurrentTestUtil.poll(buildTimeout, 0.5) {
             assert !gradle.isRunning()
         }
     }

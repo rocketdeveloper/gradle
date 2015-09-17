@@ -16,31 +16,23 @@
 
 package org.gradle.model.internal.manage.schema;
 
-import org.gradle.model.ModelMap;
-import org.gradle.model.ModelSet;
 import org.gradle.model.internal.type.ModelType;
 
-public class ModelCollectionSchema<T> extends ModelSchema<T> {
-    private final ModelType<?> elementType;
-    private boolean map;
+public class ModelCollectionSchema<T, E> extends AbstractModelSchema<T> implements ManagedImplModelSchema<T> {
 
-    public ModelCollectionSchema(ModelType<T> type, ModelType<?> elementType) {
-        super(type, Kind.COLLECTION);
+    private final ModelType<E> elementType;
+
+    public ModelCollectionSchema(ModelType<T> type, ModelType<E> elementType) {
+        super(type);
         this.elementType = elementType;
-        if (type.getRawClass().equals(ModelMap.class)) {
-            map = true;
-        } else if (type.getRawClass().equals(ModelSet.class)) {
-            map = false;
-        } else {
-            throw new IllegalArgumentException("Expected type of either ModelMap or ModelSet");
-        }
     }
 
-    public ModelType<?> getElementType() {
+    public ModelType<E> getElementType() {
         return elementType;
     }
 
-    public boolean isMap() {
-        return map;
+    @Override
+    public String toString() {
+        return "collection " + getType();
     }
 }

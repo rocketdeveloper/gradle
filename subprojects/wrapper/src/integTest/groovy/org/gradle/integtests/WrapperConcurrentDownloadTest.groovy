@@ -17,7 +17,7 @@ package org.gradle.integtests
 
 import org.apache.commons.io.IOUtils
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.internal.hash.HashUtil
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestFile
 import org.junit.Rule
 import org.junit.rules.ExternalResource
@@ -31,6 +31,7 @@ import javax.servlet.ServletException
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
+@LeaksFileHandles
 class WrapperConcurrentDownloadTest extends AbstractIntegrationSpec {
     @Rule BlockingDownloadHttpServer server = new BlockingDownloadHttpServer(distribution.binDistribution)
 
@@ -54,46 +55,6 @@ class WrapperConcurrentDownloadTest extends AbstractIntegrationSpec {
 
         then:
         results.findAll { it.output.contains("Downloading") }.size() == 1
-    }
-
-    def "wrapper execution fails when using bad checksum"() {
-        given:
-        buildFile << """
-    wrapper {
-        distributionUrl = '${server.distUri}'
-    }
-"""
-
-        succeeds('wrapper')
-
-        and:
-        file('gradle/wrapper/gradle-wrapper.properties') << 'distributionSha256Sum=bad'
-
-        when:
-        def failure = executer.usingExecutable("gradlew").withStackTraceChecksDisabled().runWithFailure()
-
-        then:
-        failure.error.contains('hash sum comparison failed')
-    }
-
-    def "wrapper successfully verifies good checksum"() {
-        given:
-        buildFile << """
-    wrapper {
-        distributionUrl = '${server.distUri}'
-    }
-"""
-
-        succeeds('wrapper')
-
-        and:
-        file('gradle/wrapper/gradle-wrapper.properties') << "distributionSha256Sum=${HashUtil.sha256(server.binZip).asHexString()}"
-
-        when:
-        def success = executer.usingExecutable("gradlew").run()
-
-        then:
-        success.output.contains('Verifying gradle-bin.zip via SHA-256 hash sum comparison')
     }
 
     static class BlockingDownloadHttpServer extends ExternalResource {

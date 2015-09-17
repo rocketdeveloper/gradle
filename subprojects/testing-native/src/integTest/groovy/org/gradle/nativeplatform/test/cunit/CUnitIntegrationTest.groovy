@@ -27,6 +27,7 @@ import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.gradle.util.TextUtil
+import spock.lang.Issue
 
 import static org.gradle.util.TextUtil.toPlatformLineSeparators
 
@@ -125,6 +126,22 @@ binaries.withType(CUnitTestSuiteBinarySpec) {
         testResults.suites['hello test'].failingTests == []
         testResults.checkTestCases(1, 1, 0)
         testResults.checkAssertions(3, 3, 0)
+    }
+
+    @Issue("GRADLE-3225")
+    def "can build and run cunit test suite with C and C++"() {
+        given:
+        useConventionalSourceLocations()
+        useStandardConfig()
+        buildFile << "apply plugin: 'cpp'"
+        file("src/hello/cpp").createDir().file("foo.cpp").text = "class foobar { };"
+
+        when:
+        run "check"
+
+        then:
+        executedAndNotSkipped ":compileHelloTestCUnitExeHelloCpp", ":compileHelloTestCUnitExeHelloC", ":compileHelloTestCUnitExeHelloTestC",
+            ":linkHelloTestCUnitExe", ":helloTestCUnitExe", ":runHelloTestCUnitExe"
     }
 
     def "can configure via testSuite component"() {
@@ -296,7 +313,7 @@ model {
                 sources {
                     variant(CSourceSet) {
                         source.srcDir "src/variant/c"
-                        lib sources.c
+                        lib hello.sources.c
                     }
                 }
             }
@@ -328,8 +345,8 @@ model {
                 sources {
                     variant(CSourceSet) {
                         source.srcDir "src/variantTest/c"
-                        lib sources.c
-                        lib sources.cunitLauncher
+                        lib helloTest.sources.c
+                        lib helloTest.sources.cunitLauncher
                     }
                 }
             }

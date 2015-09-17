@@ -43,7 +43,6 @@ import static org.gradle.model.internal.core.ModelNode.State.*;
 
 @NotThreadSafe
 public class DefaultModelRegistry implements ModelRegistry {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultModelRegistry.class);
 
     private final ModelGraph modelGraph;
@@ -61,7 +60,7 @@ public class DefaultModelRegistry implements ModelRegistry {
         ruleBindings = new RuleBindings(modelGraph);
     }
 
-    private static String toString(ModelRuleDescriptor descriptor) {
+    private static String describe(ModelRuleDescriptor descriptor) {
         StringBuilder stringBuilder = new StringBuilder();
         descriptor.describeTo(stringBuilder);
         return stringBuilder.toString();
@@ -74,7 +73,7 @@ public class DefaultModelRegistry implements ModelRegistry {
         }
 
         ModelNodeInternal root = modelGraph.getRoot();
-        registerNode(root, new ModelElementNode(toCreatorBinder(creator, ModelPath.ROOT), root));
+        root.addLink(creator);
         return this;
     }
 
@@ -84,51 +83,15 @@ public class DefaultModelRegistry implements ModelRegistry {
         return new CreatorRuleBinder(creator, subject, inputs, unboundRules);
     }
 
-    private ModelNodeInternal registerNode(ModelNodeInternal parent, ModelNodeInternal child) {
+    private ModelNodeInternal registerNode(ModelNodeInternal node) {
         if (reset) {
-            unboundRules.remove(child.getCreatorBinder());
-            return child;
+            unboundRules.remove(node.getCreatorBinder());
+            return node;
         }
-
-        ModelCreator creator = child.getCreatorBinder().getCreator();
-        ModelPath path = child.getPath();
 
         // Disabled before 2.3 release due to not wanting to validate task names (which may contain invalid chars), at least not yet
         // ModelPath.validateName(name);
 
-        ModelNodeInternal node = modelGraph.find(path);
-        if (node != null) {
-            if (node.getState() == Known) {
-                throw new DuplicateModelException(
-                    String.format(
-                        "Cannot create '%s' using creation rule '%s' as the rule '%s' is already registered to create this model element.",
-                        path,
-                        toString(creator.getDescriptor()),
-                        toString(node.getDescriptor())
-                    )
-                );
-            }
-            throw new DuplicateModelException(
-                String.format(
-                    "Cannot create '%s' using creation rule '%s' as the rule '%s' has already been used to create this model element.",
-                    path,
-                    toString(creator.getDescriptor()),
-                    toString(node.getDescriptor())
-                )
-            );
-        }
-        if (!parent.isMutable()) {
-            throw new IllegalStateException(
-                String.format(
-                    "Cannot create '%s' using creation rule '%s' as model element '%s' is no longer mutable.",
-                    path,
-                    toString(creator.getDescriptor()),
-                    parent.getPath()
-                )
-            );
-        }
-
-        node = parent.addLink(child);
         ruleBindings.add(node);
         modelGraph.add(node);
         ruleBindings.add(node.getCreatorBinder());
@@ -301,16 +264,14 @@ public class DefaultModelRegistry implements ModelRegistry {
     }
 
     private ModelNodeInternal get(ModelPath path) {
+        GoalGraph graph = new GoalGraph();
+        transitionTo(graph, graph.nodeAtState(new NodeAtState(path, Known)));
         ModelNodeInternal node = modelGraph.find(path);
         if (node == null) {
             return null;
         }
-        close(node);
+        transitionTo(graph, graph.nodeAtState(new NodeAtState(path, GraphClosed)));
         return node;
-    }
-
-    private void close(ModelNodeInternal node) {
-        transition(node, GraphClosed, false);
     }
 
     /**
@@ -420,8 +381,7 @@ public class DefaultModelRegistry implements ModelRegistry {
     }
 
     private <T> ModelView<? extends T> assertView(ModelNodeInternal node, ModelType<T> targetType, @Nullable ModelRuleDescriptor descriptor, String msg, Object... msgArgs) {
-        ModelAdapter adapter = node.getAdapter();
-        ModelView<? extends T> view = adapter.asReadOnly(targetType, node, descriptor);
+        ModelView<? extends T> view = node.asReadOnly(targetType, descriptor);
         if (view == null) {
             // TODO better error reporting here
             throw new IllegalArgumentException("Model node '" + node.getPath().toString() + "' is not compatible with requested " + targetType + " (operation: " + String.format(msg, msgArgs) + ")");
@@ -431,8 +391,7 @@ public class DefaultModelRegistry implements ModelRegistry {
     }
 
     private <T> ModelView<? extends T> assertView(ModelNodeInternal node, ModelReference<T> reference, ModelRuleDescriptor sourceDescriptor, List<ModelView<?>> inputs) {
-        ModelAdapter adapter = node.getAdapter();
-        ModelView<? extends T> view = adapter.asWritable(reference.getType(), node, sourceDescriptor, inputs);
+        ModelView<? extends T> view = node.asWritable(reference.getType(), sourceDescriptor, inputs);
         if (view == null) {
             // TODO better error reporting here
             throw new IllegalArgumentException("Cannot project model element " + node.getPath() + " to writable type '" + reference.getType() + "' for rule " + sourceDescriptor);
@@ -553,7 +512,7 @@ public class DefaultModelRegistry implements ModelRegistry {
         }
     }
 
-    private List<BindingPredicate> mapInputs(List<ModelReference<?>> inputs, ModelPath scope) {
+    private List<BindingPredicate> mapInputs(List<? extends ModelReference<?>> inputs, ModelPath scope) {
         if (inputs.isEmpty()) {
             return Collections.emptyList();
         }
@@ -566,164 +525,6 @@ public class DefaultModelRegistry implements ModelRegistry {
             }
         }
         return result;
-    }
-
-    private class ModelReferenceNode extends ModelNodeInternal {
-        private ModelNodeInternal target;
-
-        public ModelReferenceNode(CreatorRuleBinder creatorBinder) {
-            super(creatorBinder);
-        }
-
-        @Override
-        public ModelNodeInternal getTarget() {
-            return target;
-        }
-
-        @Override
-        public void setTarget(ModelNode target) {
-            this.target = (ModelNodeInternal) target;
-        }
-
-        @Override
-        public ModelNodeInternal addLink(ModelNodeInternal node) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void addLink(ModelCreator creator) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void addReference(ModelCreator creator) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void removeLink(String name) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void applyToSelf(ModelActionRole type, ModelAction<T> action) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void applyToAllLinks(ModelActionRole type, ModelAction<T> action) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void applyToAllLinksTransitive(ModelActionRole type, ModelAction<T> action) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void applyToLink(ModelActionRole type, ModelAction<T> action) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void applyToLink(String name, Class<? extends RuleSource> rules) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void applyToLinks(ModelType<?> type, Class<? extends RuleSource> rules) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void applyToAllLinksTransitive(ModelType<?> type, Class<? extends RuleSource> rules) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void applyToSelf(Class<? extends RuleSource> rules) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public int getLinkCount(ModelType<?> type) {
-            return 0;
-        }
-
-        @Override
-        public Set<String> getLinkNames(ModelType<?> type) {
-            return Collections.emptySet();
-        }
-
-        @Nullable
-        @Override
-        public MutableModelNode getLink(String name) {
-            return null;
-        }
-
-        @Override
-        public Iterable<? extends ModelNodeInternal> getLinks() {
-            return Collections.emptySet();
-        }
-
-        @Override
-        public Iterable<? extends MutableModelNode> getLinks(ModelType<?> type) {
-            return Collections.emptySet();
-        }
-
-        @Override
-        public int getLinkCount() {
-            return 0;
-        }
-
-        @Override
-        public boolean hasLink(String name, ModelType<?> type) {
-            return false;
-        }
-
-        @Override
-        public boolean hasLink(String name) {
-            return false;
-        }
-
-        @Override
-        public <T> T getPrivateData(ModelType<T> type) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void setPrivateData(Class<? super T> type, T object) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> void setPrivateData(ModelType<? super T> type, T object) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Object getPrivateData() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <T> T getPrivateData(Class<T> type) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void ensureUsable() {
-        }
-
-        @Override
-        public void realize() {
-
-        }
-
-        @Override
-        public MutableModelNode getParent() {
-            return null;
-        }
     }
 
     private class ModelElementNode extends ModelNodeInternal {
@@ -743,9 +544,21 @@ public class DefaultModelRegistry implements ModelRegistry {
         }
 
         @Override
-        public ModelNodeInternal addLink(ModelNodeInternal node) {
-            links.put(node.getPath().getName(), node);
-            return node;
+        public <T> ModelView<? extends T> asReadOnly(ModelType<T> type, @Nullable ModelRuleDescriptor ruleDescriptor) {
+            ModelView<? extends T> modelView = getAdapter().asReadOnly(type, this, ruleDescriptor);
+            if (modelView == null) {
+                throw new IllegalStateException("Model node " + getPath() + " cannot be expressed as a read-only view of type " + type);
+            }
+            return modelView;
+        }
+
+        @Override
+        public <T> ModelView<? extends T> asWritable(ModelType<T> type, ModelRuleDescriptor ruleDescriptor, List<ModelView<?>> inputs) {
+            ModelView<? extends T> modelView = getAdapter().asWritable(type, this, ruleDescriptor, inputs);
+            if (modelView == null) {
+                throw new IllegalStateException("Model node " + getPath() + " cannot be expressed as a mutable view of type " + type);
+            }
+            return modelView;
         }
 
         @Override
@@ -986,18 +799,59 @@ public class DefaultModelRegistry implements ModelRegistry {
 
         @Override
         public void addReference(ModelCreator creator) {
-            if (!getPath().isDirectChild(creator.getPath())) {
-                throw new IllegalArgumentException(String.format("Reference element creator has a path (%s) which is not a child of this node (%s).", creator.getPath(), getPath()));
-            }
-            registerNode(this, new ModelReferenceNode(toCreatorBinder(creator, ModelPath.ROOT)));
+            addNode(new ModelReferenceNode(toCreatorBinder(creator, ModelPath.ROOT), this), creator);
         }
 
         @Override
         public void addLink(ModelCreator creator) {
-            if (!getPath().isDirectChild(creator.getPath())) {
-                throw new IllegalArgumentException(String.format("Linked element creator has a path (%s) which is not a child of this node (%s).", creator.getPath(), getPath()));
+            addNode(new ModelElementNode(toCreatorBinder(creator, ModelPath.ROOT), this), creator);
+        }
+
+        private void addNode(ModelNodeInternal child, ModelCreator creator) {
+            ModelPath childPath = child.getPath();
+            if (!getPath().isDirectChild(childPath)) {
+                throw new IllegalArgumentException(String.format("Element creator has a path (%s) which is not a child of this node (%s).", childPath, getPath()));
             }
-            registerNode(this, new ModelElementNode(toCreatorBinder(creator, ModelPath.ROOT), this));
+
+            if (reset) {
+                // Reuse child node
+                registerNode(child);
+                return;
+            }
+
+            ModelNodeInternal currentChild = links.get(childPath.getName());
+            if (currentChild != null) {
+                if (currentChild.getState() == Known) {
+                    throw new DuplicateModelException(
+                        String.format(
+                            "Cannot create '%s' using creation rule '%s' as the rule '%s' is already registered to create this model element.",
+                            childPath,
+                            describe(creator.getDescriptor()),
+                            describe(currentChild.getDescriptor())
+                        )
+                    );
+                }
+                throw new DuplicateModelException(
+                    String.format(
+                        "Cannot create '%s' using creation rule '%s' as the rule '%s' has already been used to create this model element.",
+                        childPath,
+                        describe(creator.getDescriptor()),
+                        describe(currentChild.getDescriptor())
+                    )
+                );
+            }
+            if (!isMutable()) {
+                throw new IllegalStateException(
+                    String.format(
+                        "Cannot create '%s' using creation rule '%s' as model element '%s' is no longer mutable.",
+                        childPath,
+                        describe(creator.getDescriptor()),
+                        getPath()
+                    )
+                );
+            }
+            links.put(child.getPath().getName(), child);
+            registerNode(child);
         }
 
         @Override
@@ -1008,24 +862,20 @@ public class DefaultModelRegistry implements ModelRegistry {
         }
 
         @Override
-        public ModelNodeInternal getTarget() {
-            return this;
-        }
-
-        @Override
         public void setTarget(ModelNode target) {
             throw new UnsupportedOperationException(String.format("This node (%s) is not a reference to another node.", getPath()));
         }
 
         @Override
         public void ensureUsable() {
-            transition(this, Initialized, true);
+            ensureAtLeast(Initialized);
         }
 
         @Override
-        public void realize() {
-            close(this);
+        public void ensureAtLeast(State state) {
+            transition(this, state, true);
         }
+
     }
 
     private class GoalGraph {
@@ -1217,11 +1067,8 @@ public class DefaultModelRegistry implements ModelRegistry {
                 throw new IllegalStateException(String.format("Cannot transition model element '%s' to state %s as it is already at state %s.", node.getPath(), getTargetState(), node.getState()));
             }
             LOGGER.debug("Transitioning model element '{}' to state {}.", node.getPath(), getTargetState().name());
-            doApply(node);
             node.setState(getTargetState());
         }
-
-        abstract void doApply(ModelNodeInternal node);
 
         @Override
         void attachToCycle(List<String> displayValue) {
@@ -1239,11 +1086,6 @@ public class DefaultModelRegistry implements ModelRegistry {
             // Must run the creator
             dependencies.add(new RunCreatorAction(getPath(), node.getCreatorBinder()));
             return true;
-        }
-
-        @Override
-        void doApply(ModelNodeInternal node) {
-            // Nothing to do, creator action is run as a dependency
         }
     }
 
@@ -1280,15 +1122,6 @@ public class DefaultModelRegistry implements ModelRegistry {
 
         @Override
         boolean doCalculateDependencies(GoalGraph graph, Collection<ModelGoal> dependencies) {
-            if (seenRules.isEmpty() && getTargetState().equals(DefaultsApplied)) {
-                for (RuleBinder binder : ruleBindings.getRulesWithSubject(getPath())) {
-                    if (seenRules.add(binder)) {
-                        MutatorRuleBinder<?> mutator = Cast.uncheckedCast(binder);
-                        dependencies.add(new RunModelAction(getPath(), mutator));
-                    }
-                }
-            }
-
             // Must run each action
             for (RuleBinder binder : ruleBindings.getRulesWithSubject(target)) {
                 if (seenRules.add(binder)) {
@@ -1299,10 +1132,6 @@ public class DefaultModelRegistry implements ModelRegistry {
             return false;
         }
 
-        @Override
-        void doApply(ModelNodeInternal node) {
-            // Nothing to do, actions are run as dependencies
-        }
     }
 
     private class CloseGraph extends TransitionNodeToState {
@@ -1312,49 +1141,129 @@ public class DefaultModelRegistry implements ModelRegistry {
 
         @Override
         boolean doCalculateDependencies(GoalGraph graph, Collection<ModelGoal> dependencies) {
-            // Must graph-close each child first
-            for (ModelNodeInternal child : node.getLinks()) {
-                dependencies.add(graph.nodeAtState(new NodeAtState(child.getPath(), GraphClosed)));
+            if (node instanceof ModelReferenceNode) {
+                // Graph close the target of the reference
+                ModelReferenceNode referenceNode = (ModelReferenceNode) node;
+                ModelNodeInternal target = referenceNode.getTarget();
+                if (target == null || target.getPath().isDescendant(getPath())) {
+                    // No target, or target is an ancestor of this node, so is already being closed
+                    return true;
+                }
+                dependencies.add(graph.nodeAtState(new NodeAtState(target.getPath(), GraphClosed)));
+            } else {
+                // Must graph-close each child first
+                for (ModelNodeInternal child : node.getLinks()) {
+                    dependencies.add(graph.nodeAtState(new NodeAtState(child.getPath(), GraphClosed)));
+                }
             }
             return true;
         }
 
+    }
+
+    /**
+     * Attempts to make known the given path. When the path references a link, also makes the target of the link known.
+     *
+     * Does not fail if not possible to do.
+     */
+    private class TryResolvePath extends ModelNodeGoal {
+        private boolean attemptedParent;
+
+        public TryResolvePath(ModelPath path) {
+            super(path);
+        }
+
         @Override
-        void doApply(ModelNodeInternal node) {
-            // Nothing to do
+        protected boolean doIsAchieved() {
+            // Only called when node exists
+            return true;
+        }
+
+        @Override
+        public boolean calculateDependencies(GoalGraph graph, Collection<ModelGoal> dependencies) {
+            // Not already known, attempt to resolve the parent
+            if (!attemptedParent) {
+                dependencies.add(new TryResolvePath(getPath().getParent()));
+                attemptedParent = true;
+                return false;
+            }
+
+            ModelNodeInternal parent = modelGraph.find(getPath().getParent());
+            if (parent == null) {
+                // No parent, we're done
+                return true;
+            }
+            if (parent instanceof ModelReferenceNode) {
+                // Parent is a reference, need to resolve the target
+                ModelReferenceNode parentReference = (ModelReferenceNode) parent;
+                if (parentReference.getTarget() != null) {
+                    dependencies.add(new TryResolveReference(parentReference, getPath()));
+                }
+            } else {
+                // Self close parent in order to discover its children, or its target in the case of a reference
+                dependencies.add(graph.nodeAtState(new NodeAtState(getPath().getParent(), SelfClosed)));
+            }
+
+            return true;
+        }
+    }
+
+    private class TryResolveReference extends ModelGoal {
+        private final ModelReferenceNode parent;
+        private final ModelPath path;
+
+        public TryResolveReference(ModelReferenceNode parent, ModelPath path) {
+            this.parent = parent;
+            this.path = path;
+        }
+
+        @Override
+        public boolean calculateDependencies(GoalGraph graph, Collection<ModelGoal> dependencies) {
+            dependencies.add(new TryResolvePath(parent.getTarget().getPath().child(path.getName())));
+            return true;
+        }
+
+        @Override
+        void apply() {
+            // Rough implementation to get something to work
+            ModelNodeInternal parentTarget = parent.getTarget();
+            ModelNodeInternal childTarget = parentTarget.getLink(path.getName());
+            ModelCreator creator = ModelCreators.of(path)
+                .descriptor(parent.getDescriptor())
+                .withProjection(UnmanagedModelProjection.of(Object.class))
+                .build();
+            ModelReferenceNode childNode = new ModelReferenceNode(toCreatorBinder(creator, ModelPath.ROOT), parent);
+            childNode.setTarget(childTarget);
+            registerNode(childNode);
         }
     }
 
     /**
-     * Attempts to define the children of a given node. Does not fail if not possible to do so.
+     * Attempts to define the contents of the requested scope. Does not fail if not possible.
      */
-    private class TryDefineChildren extends ModelGoal {
-        private final ModelPath path;
-        private boolean attemptedParent;
+    private class TryDefineScope extends ModelGoal {
+        private final ModelPath scope;
+        private boolean attemptedPath;
 
-        public TryDefineChildren(ModelPath path) {
-            this.path = path;
-        }
-
-        public ModelPath getPath() {
-            return path;
+        public TryDefineScope(ModelPath scope) {
+            this.scope = scope;
         }
 
         @Override
         public boolean isAchieved() {
-            ModelNodeInternal node = modelGraph.find(path);
+            ModelNodeInternal node = modelGraph.find(scope);
             return node != null && node.getState().compareTo(SelfClosed) >= 0;
         }
 
         @Override
         public boolean calculateDependencies(GoalGraph graph, Collection<ModelGoal> dependencies) {
-            if (path.getParent() != null && !attemptedParent) {
-                dependencies.add(new TryDefineChildren(path.getParent()));
-                attemptedParent = true;
+            if (!attemptedPath) {
+                dependencies.add(new TryResolvePath(scope));
+                attemptedPath = true;
                 return false;
             }
-            if (modelGraph.find(path) != null) {
-                dependencies.add(graph.nodeAtState(new NodeAtState(path, SelfClosed)));
+            if (modelGraph.find(scope) != null) {
+                dependencies.add(graph.nodeAtState(new NodeAtState(scope, SelfClosed)));
             }
             return true;
         }
@@ -1390,9 +1299,9 @@ public class DefaultModelRegistry implements ModelRegistry {
         private void maybeBind(ModelBinding binding, Collection<ModelGoal> dependencies) {
             if (!binding.isBound()) {
                 if (binding.getPredicate().getPath() != null) {
-                    dependencies.add(new TryDefineChildren(binding.getPredicate().getPath().getParent()));
+                    dependencies.add(new TryResolvePath(binding.getPredicate().getPath()));
                 } else {
-                    dependencies.add(new TryDefineChildren(binding.getPredicate().getScope()));
+                    dependencies.add(new TryDefineScope(binding.getPredicate().getScope()));
                 }
             }
         }

@@ -21,7 +21,6 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.tasks.TaskDependencyMatchers
-import org.gradle.language.base.FunctionalSourceSet
 import org.gradle.language.base.LanguageSourceSet
 import org.gradle.model.ModelMap
 import org.gradle.model.internal.core.ModelPath
@@ -70,20 +69,20 @@ abstract class AbstractNativeComponentPluginTest extends Specification {
 
         and:
         def exe = components.exe
-        exe.sources instanceof FunctionalSourceSet
+        exe.sources instanceof ModelMap
         sourceSetClass.isInstance(exe.sources."$pluginName")
         exe.sources."$pluginName".source.srcDirs == [project.file("src/exe/$pluginName")] as Set
         exe.sources."$pluginName".exportedHeaders.srcDirs == [project.file("src/exe/headers")] as Set
 
         and:
         def lib = components.lib
-        lib.sources instanceof FunctionalSourceSet
+        lib.sources instanceof ModelMap
         sourceSetClass.isInstance(lib.sources."$pluginName")
         lib.sources."$pluginName".source.srcDirs == [project.file("src/lib/$pluginName")] as Set
         lib.sources."$pluginName".exportedHeaders.srcDirs == [project.file("src/lib/headers")] as Set
 
         and:
-        project.sources as Set == lib.sources + exe.sources
+        project.sources as Set == (lib.sources as Set) + (exe.sources as Set)
     }
 
     def "can configure source set locations"() {

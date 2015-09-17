@@ -32,6 +32,7 @@ class DefaultBuildLauncher extends AbstractLongRunningOperation<DefaultBuildLaun
 
     public DefaultBuildLauncher(AsyncConsumerActionExecutor connection, ConnectionParameters parameters) {
         super(parameters);
+        operationParamsBuilder.setEntryPoint("BuildLauncher API");
         operationParamsBuilder.setTasks(Collections.<String>emptyList());
         this.connection = connection;
     }
@@ -72,7 +73,8 @@ class DefaultBuildLauncher extends AbstractLongRunningOperation<DefaultBuildLaun
     }
 
     public void run(final ResultHandler<? super Void> handler) {
-        final ConsumerOperationParameters operationParameters = operationParamsBuilder.setParameters(connectionParameters).build();
+        final ConsumerOperationParameters operationParameters = getConsumerOperationParameters();
+
         connection.run(new ConsumerAction<Void>() {
             public ConsumerOperationParameters getParameters() {
                 return operationParameters;
@@ -80,7 +82,6 @@ class DefaultBuildLauncher extends AbstractLongRunningOperation<DefaultBuildLaun
 
             public Void run(ConsumerConnection connection) {
                 Void sink = connection.run(Void.class, operationParameters);
-                operationParameters.getBuildProgressListener().rethrowErrors();
                 return sink;
             }
         }, new ResultHandlerAdapter(handler));

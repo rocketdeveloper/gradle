@@ -17,6 +17,7 @@
 package org.gradle.play.tasks
 
 import org.hamcrest.Matchers
+import static org.gradle.play.integtest.fixtures.Repositories.*
 
 class JavaScriptMinifyIntegrationTest extends AbstractJavaScriptMinifyIntegrationTest {
     @Override
@@ -31,13 +32,7 @@ class JavaScriptMinifyIntegrationTest extends AbstractJavaScriptMinifyIntegratio
                 id 'play-javascript'
             }
 
-            repositories{
-                jcenter()
-                maven{
-                    name = "typesafe-maven-release"
-                    url = "https://repo.typesafe.com/typesafe/maven-releases"
-                }
-            }
+            ${PLAY_REPOSITORES}
         """
     }
 

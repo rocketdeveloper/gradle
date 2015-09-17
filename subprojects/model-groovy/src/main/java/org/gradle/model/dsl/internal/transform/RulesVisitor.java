@@ -28,7 +28,7 @@ import org.codehaus.groovy.control.SourceUnit;
 import org.gradle.api.Nullable;
 import org.gradle.groovy.scripts.internal.AstUtils;
 import org.gradle.groovy.scripts.internal.RestrictiveCodeVisitor;
-import org.gradle.groovy.scripts.internal.ScriptSourceDescriptionTransformer;
+import org.gradle.groovy.scripts.internal.ScriptSourceTransformer;
 import org.gradle.internal.Pair;
 import org.gradle.model.internal.core.ModelPath;
 
@@ -39,7 +39,6 @@ public class RulesVisitor extends RestrictiveCodeVisitor {
 
     private static final String AST_NODE_METADATA_KEY = RulesVisitor.class.getName();
     private static final ClassNode ANNOTATION_CLASS_NODE = new ClassNode(RulesBlock.class);
-
 
     // TODO - have to do much better here
     public static final String INVALID_STATEMENT = "illegal rule";
@@ -115,7 +114,7 @@ public class RulesVisitor extends RestrictiveCodeVisitor {
         call.setImplicitThis(true);
         call.setObjectExpression(new MethodCallExpression(VariableExpression.THIS_EXPRESSION, "getDelegate", ArgumentListExpression.EMPTY_ARGUMENTS));
 
-        SourceLocation sourceLocation = new SourceLocation(getScriptSourceDescription(), call.getLineNumber(), call.getColumnNumber());
+        SourceLocation sourceLocation = new SourceLocation(getScriptSourceLocation(), getScriptSourceDescription(), call.getLineNumber(), call.getColumnNumber());
         closureExpression.getCode().setNodeMetaData(RuleVisitor.AST_NODE_METADATA_LOCATION_KEY, sourceLocation);
 
         closureExpression.visit(ruleVisitor);
@@ -132,14 +131,18 @@ public class RulesVisitor extends RestrictiveCodeVisitor {
         call.setImplicitThis(true);
         call.setObjectExpression(new MethodCallExpression(VariableExpression.THIS_EXPRESSION, "getDelegate", ArgumentListExpression.EMPTY_ARGUMENTS));
 
-        SourceLocation sourceLocation = new SourceLocation(getScriptSourceDescription(), call.getLineNumber(), call.getColumnNumber());
+        SourceLocation sourceLocation = new SourceLocation(getScriptSourceLocation(), getScriptSourceDescription(), call.getLineNumber(), call.getColumnNumber());
         closureExpression.getCode().setNodeMetaData(RuleVisitor.AST_NODE_METADATA_LOCATION_KEY, sourceLocation);
 
         closureExpression.visit(ruleVisitor);
     }
 
     private String getScriptSourceDescription() {
-        return sourceUnit.getAST().getNodeMetaData(ScriptSourceDescriptionTransformer.AST_NODE_METADATA_KEY);
+        return sourceUnit.getAST().getNodeMetaData(ScriptSourceTransformer.AST_NODE_DESCRIPTION_METADATA_KEY);
+    }
+
+    private String getScriptSourceLocation() {
+        return sourceUnit.getAST().getNodeMetaData(ScriptSourceTransformer.AST_NODE_LOCATION_METADATA_KEY);
     }
 
     @Nullable // if the target was invalid

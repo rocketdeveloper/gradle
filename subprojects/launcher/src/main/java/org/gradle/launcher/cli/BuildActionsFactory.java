@@ -28,10 +28,7 @@ import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.ServiceRegistryBuilder;
 import org.gradle.internal.service.scopes.GlobalScopeServices;
 import org.gradle.launcher.daemon.bootstrap.ForegroundDaemonAction;
-import org.gradle.launcher.daemon.client.DaemonClient;
-import org.gradle.launcher.daemon.client.DaemonClientFactory;
-import org.gradle.launcher.daemon.client.DaemonClientGlobalServices;
-import org.gradle.launcher.daemon.client.DaemonStopClient;
+import org.gradle.launcher.daemon.client.*;
 import org.gradle.launcher.daemon.configuration.CurrentProcess;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
 import org.gradle.launcher.daemon.configuration.ForegroundDaemonConfiguration;
@@ -56,6 +53,7 @@ class BuildActionsFactory implements CommandLineAction {
 
     public Runnable createAction(CommandLineParser parser, ParsedCommandLine commandLine) {
         Parameters parameters = parametersConverter.convert(commandLine, new Parameters());
+        parameters.getDaemonParameters().applyDefaultsFor(new JvmVersionDetector().getJavaVersion(parameters.getDaemonParameters().getEffectiveJvm()));
 
         if (parameters.getDaemonParameters().isStop()) {
             return stopAllDaemons(parameters.getDaemonParameters(), loggingServices);
@@ -88,7 +86,7 @@ class BuildActionsFactory implements CommandLineAction {
         ServiceRegistry clientSharedServices = createGlobalClientServices();
         ServiceRegistry clientServices = clientSharedServices.get(DaemonClientFactory.class).createBuildClientServices(loggingServices.get(OutputEventListener.class), daemonParameters, System.in);
         DaemonClient client = clientServices.get(DaemonClient.class);
-        return runBuild(startParameter, daemonParameters, client);
+        return runBuild(startParameter, daemonParameters, client, clientSharedServices);
     }
 
     private boolean canUseCurrentProcess(DaemonParameters requiredBuildParameters) {
@@ -109,7 +107,7 @@ class BuildActionsFactory implements CommandLineAction {
         DocumentationRegistry documentationRegistry = globalServices.get(DocumentationRegistry.class);
         DaemonUsageSuggestingBuildActionExecuter daemonUsageSuggestingExecuter = new DaemonUsageSuggestingBuildActionExecuter(executer, textOutputFactory, documentationRegistry);
 
-        return runBuild(startParameter, daemonParameters, daemonUsageSuggestingExecuter);
+        return runBuild(startParameter, daemonParameters, daemonUsageSuggestingExecuter, globalServices);
     }
 
     private Runnable runBuildInSingleUseDaemon(StartParameter startParameter, DaemonParameters daemonParameters, ServiceRegistry loggingServices) {
@@ -126,7 +124,7 @@ class BuildActionsFactory implements CommandLineAction {
         ServiceRegistry clientSharedServices = createGlobalClientServices();
         ServiceRegistry clientServices = clientSharedServices.get(DaemonClientFactory.class).createSingleUseDaemonClientServices(loggingServices.get(OutputEventListener.class), daemonParameters, System.in);
         DaemonClient client = clientServices.get(DaemonClient.class);
-        return runBuild(startParameter, daemonParameters, client);
+        return runBuild(startParameter, daemonParameters, client, clientSharedServices);
     }
 
     private ServiceRegistry createGlobalClientServices() {
@@ -138,14 +136,14 @@ class BuildActionsFactory implements CommandLineAction {
                 .build();
     }
 
-    private Runnable runBuild(StartParameter startParameter, DaemonParameters daemonParameters, BuildActionExecuter<BuildActionParameters> executer) {
+    private Runnable runBuild(StartParameter startParameter, DaemonParameters daemonParameters, BuildActionExecuter<BuildActionParameters> executer, ServiceRegistry sharedServices) {
         BuildActionParameters parameters = new DefaultBuildActionParameters(
                 daemonParameters.getEffectiveSystemProperties(),
                 System.getenv(),
                 SystemProperties.getInstance().getCurrentDir(),
                 startParameter.getLogLevel(),
-                daemonParameters.getDaemonUsage(), startParameter.isContinuous(), daemonParameters.isInteractive());
-        return new RunBuildAction(executer, startParameter, clientMetaData(), getBuildStartTime(), parameters);
+                daemonParameters.getDaemonUsage(), startParameter.isContinuous(), daemonParameters.isInteractive(), startParameter.getClasspath());
+        return new RunBuildAction(executer, startParameter, clientMetaData(), getBuildStartTime(), parameters, sharedServices);
     }
 
     private long getBuildStartTime() {

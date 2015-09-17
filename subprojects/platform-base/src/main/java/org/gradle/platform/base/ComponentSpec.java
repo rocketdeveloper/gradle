@@ -39,8 +39,16 @@ public interface ComponentSpec extends Named {
 
     /**
      * The source sets that are used to build this component.
+     *
+     * @deprecated This method is replaced with {@link #getSources()}.
      */
+    @Deprecated
     ModelMap<LanguageSourceSet> getSource();
+
+    /**
+     * The source sets that are used to build this component.
+     */
+    ModelMap<LanguageSourceSet> getSources();
 
     /**
      * Configures the source sets used to build this component.

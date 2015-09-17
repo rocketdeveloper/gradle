@@ -24,12 +24,10 @@ import org.gradle.language.base.ProjectSourceSet;
 
 public class DefaultFunctionalSourceSet extends AddOnlyRuleAwarePolymorphicDomainObjectContainer<LanguageSourceSet> implements FunctionalSourceSet {
     private final String name;
-    private final ProjectSourceSet projectSourceSet;
 
     public DefaultFunctionalSourceSet(String name, Instantiator instantiator, final ProjectSourceSet projectSourceSet) {
         super(LanguageSourceSet.class, instantiator);
         this.name = name;
-        this.projectSourceSet = projectSourceSet;
         whenObjectAdded(new Action<LanguageSourceSet>() {
             public void execute(LanguageSourceSet languageSourceSet) {
                 projectSourceSet.add(languageSourceSet);
@@ -44,14 +42,5 @@ public class DefaultFunctionalSourceSet extends AddOnlyRuleAwarePolymorphicDomai
 
     public String getName() {
         return name;
-    }
-
-    // TODO:DAZ This needs unit testing
-    // TODO:DAZ Perhaps we should pull out a LanguageSourceSet 'factory-for-type' so we only register the languages once
-    public FunctionalSourceSet copy(String name) {
-        DefaultFunctionalSourceSet copy = getInstantiator().newInstance(DefaultFunctionalSourceSet.class, name, getInstantiator(), projectSourceSet);
-        copy.namedEntityInstantiator.copyFactoriesFrom(namedEntityInstantiator);
-        copy.addAll(this);
-        return copy;
     }
 }

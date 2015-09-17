@@ -28,7 +28,7 @@ class ModelReportParser {
     public static final String NODE_SYMBOL = '+'
     public static final String END_OF_REPORT_MARKER = 'BUILD SUCCESSFUL'
     public static final String ROOT_NODE_MARKER = '+ model'
-    public static final LinkedHashMap<String, String> NODE_ATTRIBUTES = ['Value': 'nodeValue', 'Type': 'type', 'Origin': 'origin']
+    public static final LinkedHashMap<String, String> NODE_ATTRIBUTES = ['Value': 'nodeValue', 'Type': 'type', 'Creator': 'creator']
 
     static ParsedModelReport parse(String text) {
         validate(text)
@@ -83,10 +83,28 @@ class ModelReportParser {
                     prev = node
                 }
             } else {
-                setNodeProperties(line, prev)
+                if (isARuleLabel(line)) {
+                    prev.attributes()['rules'] = []
+                } else if (isARule(line)) {
+                    prev.attributes()['rules'] << rule(line)
+                } else {
+                    setNodeProperties(line, prev)
+                }
             }
         }
         return root
+    }
+
+    private static String rule(String line) {
+        return line.replaceAll('⤷', '').trim()
+    }
+
+    private static boolean isARule(String line) {
+        return line =~ /⤷ /
+    }
+
+    private static boolean isARuleLabel(String line) {
+        return line =~ /$( +)| Rules:/
     }
 
     private static String getNodeName(String line) {
@@ -101,7 +119,7 @@ class ModelReportParser {
     @VisibleForTesting
     static void setNodeProperties(String line, ReportNode reportNode) {
         NODE_ATTRIBUTES.each { String pattern, String prop ->
-            def matcher = (line =~ /\| ${pattern}: (.+)\|$/)
+            def matcher = (line =~ /\| ${pattern}: (.+)$/)
             if (matcher) {
                 String val = matcher[0][1]
                 if (val) {

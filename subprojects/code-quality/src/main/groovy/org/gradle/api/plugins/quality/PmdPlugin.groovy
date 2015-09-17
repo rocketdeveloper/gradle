@@ -87,6 +87,7 @@ class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
             ruleSetConfig = { extension.ruleSetConfig }
             ruleSetFiles = { extension.ruleSetFiles }
             ignoreFailures = { extension.ignoreFailures }
+            rulePriority = { extension.rulePriority }
             consoleOutput = { extension.consoleOutput }
             targetJdk = { extension.targetJdk }
             task.reports.all { report ->
@@ -113,5 +114,8 @@ class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
             description = "Run PMD analysis for ${sourceSet.name} classes"
         }
         task.setSource(sourceSet.allJava)
+        task.conventionMapping.with {
+            classpath = { sourceSet.compileClasspath }
+        }
     }
 }

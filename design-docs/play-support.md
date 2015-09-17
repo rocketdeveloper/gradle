@@ -760,6 +760,13 @@ All infrastructure can be internal and be just enough to meet the requirements f
 
 #### Implementation
 
+- Introduce `BuildSessionScopeServices` which is a PluginServiceRegistry scope that fits between GlobalScopeServices and BuildScopeServices.
+It manages the lifecycle of services that should exist across multiple builds in a continuous build session, but should not extend across
+multiple continuous build sessions (in a long-living process like the daemon).
+
+- Introduce a Deployment Registry
+
+
     // Gradle service, that outlives a single build (i.e. maybe global)
     // Accessible to tasks via service extraction
     @ThreadSafe
@@ -785,6 +792,14 @@ Subsequent invocations will do nothing.
 - ~~Can be used from Tooling API, deployment is stopped when build is cancelled~~
 - ~~Two projects in multiproject build can start deployments~~
 
+#### Open Issues
+
+- Need to figure out what to do with deployment handles when various project/model changes take place in between builds:
+  - Binary name changes (currently not possible)
+  - Platform changes (i.e. need to stop any deployment handles from other platforms before starting the new one)
+  - Project name changes
+  - PlayRun task config changes (e.g. fork options)
+
 ### Story: Play application is reloaded when changes are made to local source
 
 This story adds integration with Play's mechanics to reloading the application implementation.
@@ -797,10 +812,119 @@ On reload, the play run task retrieves the deployment handle (i.e. by Play speci
 The worker protocol needs to be slightly expanded to allow communication of the new classpath/reload request.
 Existing BuildLink adapter can be used with minor modifications.
 
+
+
 #### Test coverage
 
-- Changes to source are reflected in running play app (TODO: expand for relevant different types of source)
-- Reload is not triggered if dependency of play run task fails
+- ~~User changes a controller and sees the change reflected in the running app.~~
+- ~~User changes a route and sees the change reflected in the running app.~~
+- ~~User changes a model class and sees the change reflected in the running app.~~
+- ~~User changes a twirl template and sees the change reflected in the running app.~~
+- ~~User changes a static asset and sees the change reflected in the running app.~~
+- ~~Reload is not triggered if dependency of play run task fails~~
+
+### Story: Reloading changes in multi-project Play application
+
+#### Implementation
+
+The Play BuildLink solution returns a new classloader that contains the "changing" application resources. The non-changing application resources are part of the parent classloader for the classloader returned by the BuildLink implementation.
+In a multi-project Play application, the "changing" application resources are considered to be the application jar of the current project and all dependencies that are of a Project component type. All other resources in the runtime classpath are part of the "non-changing" resources and handled by the parent classloader.
+ - dependencies of project component type will be filtered by checking `ResolvedArtifact.getId().getComponentIdentifier() instanceof ProjectComponentIdentifier`
+
+#### Test coverage
+- Changes to source are reflected in running play app
+  - test changes to primary app and submodules
+
+### Story: Scala compile process is reused across continuous build instances
+
+This is a performance optimization to the implementation of Play reload, that decreases compile times by reusing compiler daemons.
+
+#### Implementation
+
+- Move `CompilerDaemonManager` to session scope.  This will pull along:
+  - WorkerProcessFactory - Only implication is that worker process id won't be reset on every build (i.e. it will continue to increment over subsequent builds).
+  - CacheRepository - No implications.
+  - ClassPathRegistry - This doesn't actually get pulled along, we just end up with a new classpath registry at build session scope containing WorkerProcessClassPathProvider.
+  - WorkerProcessClasspathProvider - No implications.
+- This will affect compilers for:
+  - Java
+  - Scala
+  - Groovy
+  - Play Routes
+  - Play Twirl
+  - Play Javascript
+
+#### Test coverage
+
+- Verify that the following compilers are reused across continuous build invocations:
+  - ZincScalaCompiler
+  - JdkJavaCompiler
+  - ApiGroovyCompiler
+  - RoutesCompiler
+  - TwirlCompiler
+  - GoogleClosureCompiler
+- Verify that WorkerProcessFactory is reused across continuous builds.
+- Verify that CacheRepository is reused across continuous builds.
+- Verify that ClassPathRegistry is reused across continuous builds.
+- Verify that WorkerProcessClasspathProvider is reused across continuous builds.
+
+### Backlog & Open Issues
+
+- Debugging Play application that is run with playRun
+  - currently there isn't a way to add debugging JVM arguments to the worker process
+- PlayRun uses org.gradle.api.tasks.compile.BaseForkOptions for forkOptions. That class is documented to hold forked compiler JVM arguments.
+
+## Play 2.4.x support
+
+### Story: Add basic support for Play 2.4.x
+
+The Gradle Play support has a structure for supporting multiple Play major versions. Currently 2.2.x and 2.3.x are supported.
+Support for 2.4.x can be done with the same structure.
+- Add PlayMajorVersion enum for 2.4.x
+- Add 2.4.x specific adaptors for
+ - routes compiler
+ - twirl compiler
+ - play run (starting development server)
+
+Test coverage:
+- Add Play 2.4.0 to the target coverage of PlayMultiVersionIntegrationTest so that the same level of test coverage is applied to test Play 2.4.0
+
+### Story: Add support for configuring Play 2.4.x routes compiler type (injected/static)
+
+Play 2.4 introduces a new configuration option `routesGenerator` for the route compiler.
+```
+// Play provides two styles of routers, one expects its actions to be injected, the
+// other, legacy style, accesses its actions statically.
+routesGenerator := InjectedRoutesGenerator
+```
+There are currently two different types of routesGenerators: `play.routes.compiler.InjectedRoutesGenerator` and `play.routes.compiler.StaticRoutesGenerator` .
+StaticRoutesGenerator creates the legacy style access to "object" type Scala controllers. InjectedRoutesGenerator expects controllers to be "class" type in Scala.
+In Play Java, the legacy style uses static methods and the newer injected style uses normal non-static methods.
+Play uses Guice to do autowiring in the new style.
+
+Test coverage:
+- add Play 2.4.x integration test application that uses injected routes compiler and non-static style of controllers in Scala and Java.
+
+### Story: Add support for configuring Play 2.4.x aggregate reverse routes
+
+In previous versions of Play, the only way for a project to use the reverse routes of another project in a multiproject build is to create a
+compile dependency on the other project.  This is inconvenient when two different projects want to both share each others routes as it creates
+a circular dependency.  Play 2.4 introduces a new configuration option `aggregateReverseRoutes` which allows the reverse routes of projects to
+be exposed to other projects via a common shared dependency project.  Basically, each project depends on the shared project and only generates
+forward routes while all of the reverse routes come from the shared dependency.
+
+ - Play manual: [Aggregating Reverse routers](https://github.com/playframework/playframework/blob/2.4.x/documentation/manual/detailedTopics/build/AggregatingReverseRouters.md)
+ - [Routes compilation sbt task in 2.3.x](https://github.com/playframework/playframework/blob/2.3.x/framework/src/sbt-plugin/src/main/scala/PlaySourceGenerators.scala#L20)
+ - [Routes compilation sbt task in 2.4.x](https://github.com/playframework/playframework/blob/2.4.x/framework/src/sbt-plugin/src/main/scala/play/sbt/routes/RoutesCompiler.scala#L48)
+
+#### Implementation
+
+Possible implementation:
+- Add an `aggregateReverseRoutes` setting to `PlayApplicationBinarySpec` that accepts a list of projects.
+- Add a `ReverseRoutes` buildable model element to `PlayApplicationBinarySpecInternal` with an `aggregated` setting and a list of generated source dirs.
+- Split the generation of forward routes and reverse routes into two RoutesCompile tasks.
+- When a project is added to the aggregateReverseRoutes of another project, a binary rule is created that sets `ReverseRoutes.aggregated` to true and its generated source dirs are then added to the ReverseRoutes of the aggregate project.
+- When the scalaCompilePlayBinary task is configured, include ReverseRoutes generated source dirs only if aggregate is false.
 
 ### Story: Build of pending changes is deferred until reload is requested by Play application
 
@@ -816,6 +940,14 @@ This improves usability by not doing the work of _applying_ changes until the de
 
 Adapt a generic build failure exception to a `PlayException` that renders the exception message.
 
+#### Test Coverage
+
+* After the Play application has started once successfully in continuous mode (`gradle -t runPlay`), when the source is changed in a way to cause a compilation error:
+   * ~~`runPlay` should not run again~~
+   * ~~Application should return an error page with build failed exception message~~
+   * ~~Fixing compilation error should return application into "good" state~~
+   * ~~Check Java, Scala, Asset, Route and Twirl compilation failures.~~
+
 ### Story: Developer views Java and Scala compilation failure in Play application
 
 Adapt compilation failures so that the failure and content of the failing file is displayed in the Play application.
@@ -827,6 +959,12 @@ This mechanism will be generally applicable to custom asset compilation tasks.
 
 ### Story: Developer views build failure stack trace in Play application
 
+### Open Issues
+
+* Consider the case of `otherTask` that depends on `runPlay`. If `otherTask` fails, should the Play application report the build failure? (Yes)
+* In the case of multi-project builds, if you have multiple Play applications that are configured so they can run at the same time (different ports), if one
+project fails to build, should we report that as failures in all of the other applications? (Yes)
+
 ## Feature: Resources are built on demand when running Play application
 
 When running a Play application, start the application without building any resources. Build these resources only when requested
@@ -837,6 +975,16 @@ by the client.
 - Include the transitive input of these tasks as inputs to the watch mechanism, so that further changes in these source files will
   trigger a restart of the application at the appropriate time.
 - Failures need to be forwarded to the application for display.
+
+## Feature: Enhanced Play Testing support
+
+### Story: Developer configures a new test suite using the model
+
+Currently only a single Play Test suite is added to the Play model.  This would allow additional test suites to be easily configured
+via a model element.
+
+- Introduce a "test suite" model element that models a test suite with configurable source sets.
+- Derive all necessary tasks off of the source set.
 
 ## Feature: Long running compiler daemon
 

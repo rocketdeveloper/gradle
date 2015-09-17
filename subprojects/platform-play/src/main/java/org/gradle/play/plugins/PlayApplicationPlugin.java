@@ -17,18 +17,17 @@ package org.gradle.play.plugins;
 
 import org.apache.commons.lang.StringUtils;
 import org.gradle.api.*;
+import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact;
 import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.internal.file.copy.CopySpecInternal;
 import org.gradle.api.internal.project.ProjectIdentifier;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.tasks.scala.IncrementalCompileOptions;
-import org.gradle.deployment.internal.DeploymentRegistry;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.language.base.LanguageSourceSet;
-import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.sources.BaseLanguageSourceSet;
 import org.gradle.language.java.JavaSourceSet;
 import org.gradle.language.java.plugins.JavaLanguagePlugin;
@@ -42,28 +41,27 @@ import org.gradle.language.scala.tasks.PlatformScalaCompile;
 import org.gradle.language.twirl.TwirlSourceSet;
 import org.gradle.language.twirl.internal.DefaultTwirlSourceSet;
 import org.gradle.model.*;
+import org.gradle.model.internal.registry.ModelRegistry;
+import org.gradle.model.internal.type.ModelType;
 import org.gradle.platform.base.*;
 import org.gradle.platform.base.internal.DefaultPlatformRequirement;
 import org.gradle.platform.base.internal.PlatformRequirement;
 import org.gradle.platform.base.internal.PlatformResolvers;
-import org.gradle.platform.base.internal.toolchain.ResolvedTool;
-import org.gradle.platform.base.internal.toolchain.ToolResolver;
 import org.gradle.play.JvmClasses;
 import org.gradle.play.PlayApplicationBinarySpec;
 import org.gradle.play.PlayApplicationSpec;
 import org.gradle.play.PublicAssets;
 import org.gradle.play.internal.*;
 import org.gradle.play.internal.platform.PlayPlatformInternal;
-import org.gradle.play.internal.routes.RoutesCompileSpec;
-import org.gradle.play.internal.run.PlayApplicationDeploymentHandle;
-import org.gradle.play.internal.run.PlayApplicationRunner;
-import org.gradle.play.internal.twirl.TwirlCompileSpec;
-import org.gradle.play.internal.twirl.TwirlCompilerFactory;
+import org.gradle.play.internal.run.PlayApplicationRunnerFactory;
+import org.gradle.play.internal.toolchain.PlayToolChainInternal;
 import org.gradle.play.platform.PlayPlatform;
 import org.gradle.play.tasks.PlayRun;
 import org.gradle.play.tasks.RoutesCompile;
 import org.gradle.play.tasks.TwirlCompile;
+import org.gradle.util.VersionNumber;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Date;
@@ -71,17 +69,24 @@ import java.util.Date;
 /**
  * Plugin for Play Framework component support. Registers the {@link org.gradle.play.PlayApplicationSpec} component type for the components container.
  */
-
 @Incubating
 public class PlayApplicationPlugin implements Plugin<Project> {
-    private final static String DEFAULT_PLAY_VERSION = "2.3.7";
     public static final int DEFAULT_HTTP_PORT = 9000;
+    public static final String RUN_GROUP = "Run";
+    private final ModelRegistry modelRegistry;
+
+    @Inject
+    public PlayApplicationPlugin(ModelRegistry modelRegistry) {
+        this.modelRegistry = modelRegistry;
+    }
 
     @Override
     public void apply(Project project) {
         project.getPluginManager().apply(JavaLanguagePlugin.class);
         project.getPluginManager().apply(ScalaLanguagePlugin.class);
         project.getExtensions().create("playConfigurations", PlayPluginConfigurations.class, project.getConfigurations(), project.getDependencies());
+
+        modelRegistry.getRoot().applyToAllLinksTransitive(ModelType.of(PlayApplicationSpec.class), PlaySourceSetRules.class);
     }
 
     @SuppressWarnings("UnusedDeclaration")
@@ -89,6 +94,11 @@ public class PlayApplicationPlugin implements Plugin<Project> {
         @Model
         PlayPluginConfigurations configurations(ExtensionContainer extensions) {
             return extensions.getByType(PlayPluginConfigurations.class);
+        }
+
+        @Model
+        PlayToolChainInternal playToolChain(ServiceRegistry serviceRegistry) {
+            return serviceRegistry.get(PlayToolChainInternal.class);
         }
 
         @Model
@@ -128,37 +138,6 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             builder.defaultImplementation(DefaultRoutesSourceSet.class);
         }
 
-        @Mutate
-        void createJvmSourceSets(ModelMap<PlayApplicationSpec> components, ServiceRegistry serviceRegistry) {
-            components.beforeEach(new Action<PlayApplicationSpec>() {
-                @Override
-                public void execute(PlayApplicationSpec playComponent) {
-                    playComponent.getSource().create("scala", ScalaLanguageSourceSet.class, new Action<ScalaLanguageSourceSet>() {
-                        @Override
-                        public void execute(ScalaLanguageSourceSet scalaSources) {
-                            scalaSources.getSource().srcDir("app");
-                            scalaSources.getSource().include("**/*.scala");
-                        }
-                    });
-
-                    playComponent.getSource().create("java", JavaSourceSet.class, new Action<JavaSourceSet>() {
-                        @Override
-                        public void execute(JavaSourceSet javaSources) {
-                            javaSources.getSource().srcDir("app");
-                            javaSources.getSource().include("**/*.java");
-                        }
-                    });
-
-                    playComponent.getSource().create("resources", JvmResourceSet.class, new Action<JvmResourceSet>() {
-                        @Override
-                        public void execute(JvmResourceSet appResources) {
-                            appResources.getSource().srcDirs("conf");
-                        }
-                    });
-                }
-            });
-        }
-
         @Validate
         void failOnMultiplePlayComponents(ModelMap<PlayApplicationSpec> container) {
             if (container.size() >= 2) {
@@ -178,14 +157,30 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             });
         }
 
+        @Validate
+        void failIfInjectedRouterIsUsedWithOldVersion(ModelMap<PlayApplicationBinarySpec> playApplicationBinaries) {
+            playApplicationBinaries.afterEach(new Action<PlayApplicationBinarySpec>() {
+                @Override
+                public void execute(PlayApplicationBinarySpec playApplicationBinary) {
+                    if (playApplicationBinary.getApplication().getInjectedRoutesGenerator()) {
+                        final PlayPlatform playPlatform = playApplicationBinary.getTargetPlatform();
+                        VersionNumber minSupportedVersion = VersionNumber.parse("2.4.0");
+                        VersionNumber playVersion = VersionNumber.parse(playPlatform.getPlayVersion());
+                        if (playVersion.compareTo(minSupportedVersion) < 0) {
+                            throw new GradleException("Injected routers are only supported in Play 2.4 or newer.");
+                        }
+                    }
+                }
+            });
+        }
+
         @ComponentBinaries
         void createBinaries(ModelMap<PlayApplicationBinarySpec> binaries, final PlayApplicationSpec componentSpec,
-                            final PlatformResolvers platforms, final PlayPluginConfigurations configurations, final ServiceRegistry serviceRegistry,
+                            final PlatformResolvers platforms, final PlayToolChainInternal playToolChainInternal, final PlayPluginConfigurations configurations, final ServiceRegistry serviceRegistry,
                             @Path("buildDir") final File buildDir, final ProjectIdentifier projectIdentifier) {
 
             final FileResolver fileResolver = serviceRegistry.get(FileResolver.class);
             final Instantiator instantiator = serviceRegistry.get(Instantiator.class);
-            final ToolResolver toolResolver = serviceRegistry.get(ToolResolver.class);
             final String binaryName = String.format("%sBinary", componentSpec.getName());
 
             binaries.create(binaryName, new Action<PlayApplicationBinarySpec>() {
@@ -194,11 +189,11 @@ public class PlayApplicationPlugin implements Plugin<Project> {
                     playBinaryInternal.setApplication(componentSpec);
                     final File binaryBuildDir = new File(buildDir, binaryName);
 
-                    final PlayPlatform chosenPlatform = resolveTargetPlatform(componentSpec, platforms, configurations);
+                    final PlayPlatform chosenPlatform = resolveTargetPlatform(componentSpec, platforms);
                     initialiseConfigurations(configurations, chosenPlatform);
 
                     playBinaryInternal.setTargetPlatform(chosenPlatform);
-                    playBinaryInternal.setToolResolver(toolResolver);
+                    playBinaryInternal.setToolChain(playToolChainInternal);
 
                     File mainJar = new File(binaryBuildDir, String.format("lib/%s.jar", projectIdentifier.getName()));
                     File assetsJar = new File(binaryBuildDir, String.format("lib/%s-assets.jar", projectIdentifier.getName()));
@@ -211,41 +206,29 @@ public class PlayApplicationPlugin implements Plugin<Project> {
                     JvmClasses classes = playBinary.getClasses();
                     classes.setClassesDir(new File(binaryBuildDir, "classes"));
 
-                    ModelMap<JvmResourceSet> jvmResourceSets = componentSpec.getSource().withType(JvmResourceSet.class);
+                    ModelMap<JvmResourceSet> jvmResourceSets = componentSpec.getSources().withType(JvmResourceSet.class);
                     for (JvmResourceSet jvmResourceSet : jvmResourceSets.values()) {
                         for (File resourceDir : jvmResourceSet.getSource()) {
                             classes.addResourceDir(resourceDir);
                         }
                     }
 
-                    // TODO:DAZ These should be configured on the component
                     PublicAssets assets = playBinary.getAssets();
                     assets.addAssetDir(new File(projectIdentifier.getProjectDir(), "public"));
 
-                    playBinaryInternal.setClasspath(configurations.getPlay().getFileCollection());
-
-                    // TODO this isn't quite right - we really want a deployment handle for each
-                    // platform that a binary targets.  There's only one play binary now, so this
-                    // works, but we need a cleaner way to do this if there are ever multiple binaries
-                    ToolResolver toolResolver = serviceRegistry.get(ToolResolver.class);
-                    final ResolvedTool<PlayApplicationRunner> playApplicationRunnerTool = toolResolver.resolve(PlayApplicationRunner.class, chosenPlatform);
-                    DeploymentRegistry deploymentRegistry = serviceRegistry.get(DeploymentRegistry.class);
-                    String deploymentId = getDeploymentId(projectIdentifier, chosenPlatform.getName());
-                    if (playApplicationRunnerTool.isAvailable()) {
-                        deploymentRegistry.register(new PlayApplicationDeploymentHandle(deploymentId, playApplicationRunnerTool.get()));
-                    }
+                    playBinaryInternal.setClasspath(configurations.getPlay().getAllArtifacts());
                 }
             });
         }
 
-        private PlayPlatform resolveTargetPlatform(PlayApplicationSpec componentSpec, final PlatformResolvers platforms, PlayPluginConfigurations configurations) {
+        private PlayPlatform resolveTargetPlatform(PlayApplicationSpec componentSpec, final PlatformResolvers platforms) {
             PlatformRequirement targetPlatform = getTargetPlatform((PlayApplicationSpecInternal) componentSpec);
             return platforms.resolve(PlayPlatform.class, targetPlatform);
         }
 
         private PlatformRequirement getTargetPlatform(PlayApplicationSpecInternal playApplicationSpec) {
             if (playApplicationSpec.getTargetPlatforms().isEmpty()) {
-                String defaultPlayPlatform = String.format("play-%s", DEFAULT_PLAY_VERSION);
+                String defaultPlayPlatform = String.format("play-%s", DefaultPlayPlatform.DEFAULT_PLAY_VERSION);
                 return DefaultPlatformRequirement.create(defaultPlayPlatform);
             }
             return playApplicationSpec.getTargetPlatforms().get(0);
@@ -255,39 +238,17 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             configurations.getPlayPlatform().addDependency(((PlayPlatformInternal) playPlatform).getDependencyNotation("play"));
             configurations.getPlayTest().addDependency(((PlayPlatformInternal) playPlatform).getDependencyNotation("play-test"));
             configurations.getPlayRun().addDependency(((PlayPlatformInternal) playPlatform).getDependencyNotation("play-docs"));
+
+            addRunSupportDependencies(configurations, playPlatform);
         }
 
-        @Mutate
-        void createTwirlSourceSets(ModelMap<PlayApplicationSpec> components) {
-            components.beforeEach(new Action<PlayApplicationSpec>() {
-                @Override
-                public void execute(PlayApplicationSpec playComponent) {
-                    playComponent.getSource().create("twirlTemplates", TwirlSourceSet.class, new Action<TwirlSourceSet>() {
-                        @Override
-                        public void execute(TwirlSourceSet twirlSourceSet) {
-                            twirlSourceSet.getSource().srcDir("app");
-                            twirlSourceSet.getSource().include("**/*.html");
-                        }
-                    });
-                }
-            });
-        }
-
-        @Mutate
-        void createRoutesSourceSets(ModelMap<PlayApplicationSpec> components) {
-            components.beforeEach(new Action<PlayApplicationSpec>() {
-                @Override
-                public void execute(PlayApplicationSpec playComponent) {
-                    playComponent.getSource().create("routes", RoutesSourceSet.class, new Action<RoutesSourceSet>() {
-                        @Override
-                        public void execute(RoutesSourceSet routesSourceSet) {
-                            routesSourceSet.getSource().srcDir("conf");
-                            routesSourceSet.getSource().include("routes");
-                            routesSourceSet.getSource().include("*.routes");
-                        }
-                    });
-                }
-            });
+        private void addRunSupportDependencies(PlayPluginConfigurations configurations, PlayPlatform playPlatform) {
+            String playVersion = playPlatform.getPlayVersion();
+            String scalaCompatibilityVersion = playPlatform.getScalaPlatform().getScalaCompatibilityVersion();
+            Iterable<Dependency> runSupportDependencies = PlayApplicationRunnerFactory.createPlayRunAdapter(playPlatform).getRunsupportClasspathDependencies(playVersion, scalaCompatibilityVersion);
+            for (Dependency dependencyNotation : runSupportDependencies) {
+                configurations.getPlayRun().addDependency(dependencyNotation);
+            }
         }
 
         @Mutate
@@ -302,8 +263,7 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             binaries.all(new Action<PlayApplicationBinarySpec>() {
                 @Override
                 public void execute(PlayApplicationBinarySpec playApplicationBinarySpec) {
-                    // TODO:DAZ We'll need a different container of source sets for generated sources (can't add new ones while we iterate over the set)
-                    for (LanguageSourceSet languageSourceSet : playApplicationBinarySpec.getSource().withType(languageSourceSetType)) {
+                    for (LanguageSourceSet languageSourceSet : playApplicationBinarySpec.getInputs().withType(languageSourceSetType)) {
                         String name = String.format("%sScalaSources", languageSourceSet.getName());
                         ScalaLanguageSourceSet twirlScalaSources = BaseLanguageSourceSet.create(DefaultScalaLanguageSourceSet.class, name, playApplicationBinarySpec.getName(), fileResolver, instantiator);
                         playApplicationBinarySpec.getGeneratedScala().put(languageSourceSet, twirlScalaSources);
@@ -314,18 +274,16 @@ public class PlayApplicationPlugin implements Plugin<Project> {
 
         @BinaryTasks
         void createTwirlCompileTasks(ModelMap<Task> tasks, final PlayApplicationBinarySpec binary, ServiceRegistry serviceRegistry, @Path("buildDir") final File buildDir) {
-            final ToolResolver toolResolver = serviceRegistry.get(ToolResolver.class);
-            final ResolvedTool<Compiler<TwirlCompileSpec>> compilerTool = toolResolver.resolveCompiler(TwirlCompileSpec.class, binary.getTargetPlatform());
-            for (final TwirlSourceSet twirlSourceSet : binary.getSource().withType(TwirlSourceSet.class)) {
+            for (final TwirlSourceSet twirlSourceSet : binary.getInputs().withType(TwirlSourceSet.class)) {
                 final String twirlCompileTaskName = String.format("compile%s%s", StringUtils.capitalize(binary.getName()), StringUtils.capitalize(twirlSourceSet.getName()));
                 final File twirlCompileOutputDirectory = srcOutputDirectory(buildDir, binary, twirlCompileTaskName);
 
                 tasks.create(twirlCompileTaskName, TwirlCompile.class, new Action<TwirlCompile>() {
                     public void execute(TwirlCompile twirlCompile) {
-                        twirlCompile.setDependencyNotation(TwirlCompilerFactory.createAdapter(binary.getTargetPlatform()).getDependencyNotation());
+                        twirlCompile.setDescription("Compiles twirl templates for the '" + twirlSourceSet.getName() + "' source set.");
+                        twirlCompile.setPlatform(binary.getTargetPlatform());
                         twirlCompile.setSource(twirlSourceSet.getSource());
                         twirlCompile.setOutputDirectory(twirlCompileOutputDirectory);
-                        twirlCompile.setCompilerTool(compilerTool);
 
                         ScalaLanguageSourceSet twirlScalaSources = binary.getGeneratedScala().get(twirlSourceSet);
                         twirlScalaSources.getSource().srcDir(twirlCompileOutputDirectory);
@@ -337,18 +295,18 @@ public class PlayApplicationPlugin implements Plugin<Project> {
 
         @BinaryTasks
         void createRoutesCompileTasks(ModelMap<Task> tasks, final PlayApplicationBinarySpec binary, ServiceRegistry serviceRegistry, @Path("buildDir") final File buildDir) {
-            final ToolResolver toolResolver = serviceRegistry.get(ToolResolver.class);
-            final ResolvedTool<Compiler<RoutesCompileSpec>> compilerTool = toolResolver.resolveCompiler(RoutesCompileSpec.class, binary.getTargetPlatform());
-            for (final RoutesSourceSet routesSourceSet : binary.getSource().withType(RoutesSourceSet.class)) {
+            for (final RoutesSourceSet routesSourceSet : binary.getInputs().withType(RoutesSourceSet.class)) {
                 final String routesCompileTaskName = String.format("compile%s%s", StringUtils.capitalize(binary.getName()), StringUtils.capitalize(routesSourceSet.getName()));
                 final File routesCompilerOutputDirectory = srcOutputDirectory(buildDir, binary, routesCompileTaskName);
 
                 tasks.create(routesCompileTaskName, RoutesCompile.class, new Action<RoutesCompile>() {
                     public void execute(RoutesCompile routesCompile) {
-                        routesCompile.setCompilerTool(compilerTool);
+                        routesCompile.setDescription("Generates routes for the '" + routesSourceSet.getName() + "' source set.");
+                        routesCompile.setPlatform(binary.getTargetPlatform());
                         routesCompile.setAdditionalImports(new ArrayList<String>());
                         routesCompile.setSource(routesSourceSet.getSource());
                         routesCompile.setOutputDirectory(routesCompilerOutputDirectory);
+                        routesCompile.setInjectedRoutesGenerator(binary.getApplication().getInjectedRoutesGenerator());
 
                         ScalaLanguageSourceSet routesScalaSources = binary.getGeneratedScala().get(routesSourceSet);
                         routesScalaSources.getSource().srcDir(routesCompilerOutputDirectory);
@@ -363,6 +321,7 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             final String scalaCompileTaskName = String.format("compile%s%s", StringUtils.capitalize(binary.getName()), "Scala");
             tasks.create(scalaCompileTaskName, PlatformScalaCompile.class, new Action<PlatformScalaCompile>() {
                 public void execute(PlatformScalaCompile scalaCompile) {
+                    scalaCompile.setDescription("Compiles all scala and java source sets for the '" + binary.getName() + "' binary.");
 
                     scalaCompile.setDestinationDir(binary.getClasses().getClassesDir());
                     scalaCompile.setPlatform(binary.getTargetPlatform().getScalaPlatform());
@@ -374,12 +333,12 @@ public class PlayApplicationPlugin implements Plugin<Project> {
                     IncrementalCompileOptions incrementalOptions = scalaCompile.getScalaCompileOptions().getIncrementalOptions();
                     incrementalOptions.setAnalysisFile(new File(buildDir, String.format("tmp/scala/compilerAnalysis/%s.analysis", scalaCompileTaskName)));
 
-                    for (LanguageSourceSet appSources : binary.getSource().withType(ScalaLanguageSourceSet.class)) {
+                    for (LanguageSourceSet appSources : binary.getInputs().withType(ScalaLanguageSourceSet.class)) {
                         scalaCompile.source(appSources.getSource());
                         scalaCompile.dependsOn(appSources);
                     }
 
-                    for (LanguageSourceSet appSources : binary.getSource().withType(JavaSourceSet.class)) {
+                    for (LanguageSourceSet appSources : binary.getInputs().withType(JavaSourceSet.class)) {
                         scalaCompile.source(appSources.getSource());
                         scalaCompile.dependsOn(appSources);
                     }
@@ -401,6 +360,7 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             String jarTaskName = String.format("create%sJar", StringUtils.capitalize(binary.getName()));
             tasks.create(jarTaskName, Jar.class, new Action<Jar>() {
                 public void execute(Jar jar) {
+                    jar.setDescription("Assembles the application jar for the '" + binary.getName() + "' binary.");
                     jar.setDestinationDir(binary.getJarFile().getParentFile());
                     jar.setArchiveName(binary.getJarFile().getName());
                     jar.from(binary.getClasses().getClassesDir());
@@ -412,6 +372,7 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             String assetsJarTaskName = String.format("create%sAssetsJar", StringUtils.capitalize(binary.getName()));
             tasks.create(assetsJarTaskName, Jar.class, new Action<Jar>() {
                 public void execute(Jar jar) {
+                    jar.setDescription("Assembles the assets jar for the '" + binary.getName() + "' binary.");
                     jar.setDestinationDir(binary.getAssetsJarFile().getParentFile());
                     jar.setArchiveName(binary.getAssetsJarFile().getName());
                     jar.setClassifier("assets");
@@ -423,21 +384,23 @@ public class PlayApplicationPlugin implements Plugin<Project> {
             });
         }
 
-        // TODO:DAZ Need a nice way to create tasks that are associated with a binary but not part of _building_ it.
         @Mutate
-        void createPlayRunTask(ModelMap<Task> tasks, BinaryContainer binaryContainer, ServiceRegistry serviceRegistry, final PlayPluginConfigurations configurations, ProjectIdentifier projectIdentifier) {
-            final DeploymentRegistry deploymentRegistry = serviceRegistry.get(DeploymentRegistry.class);
+        void createPlayRunTask(ModelMap<Task> tasks, BinaryContainer binaryContainer, final ServiceRegistry serviceRegistry, final PlayPluginConfigurations configurations, ProjectIdentifier projectIdentifier, final PlayToolChainInternal playToolChain) {
+
             for (final PlayApplicationBinarySpecInternal binary : binaryContainer.withType(PlayApplicationBinarySpecInternal.class)) {
                 String runTaskName = String.format("run%s", StringUtils.capitalize(binary.getName()));
-                final String deploymentId = getDeploymentId(projectIdentifier, binary.getTargetPlatform().getName());
+
                 tasks.create(runTaskName, PlayRun.class, new Action<PlayRun>() {
                     public void execute(PlayRun playRun) {
+                        playRun.setDescription("Runs the Play application for local development.");
+                        playRun.setGroup(RUN_GROUP);
                         playRun.setHttpPort(DEFAULT_HTTP_PORT);
-                        playRun.setDeploymentRegistry(deploymentRegistry);
-                        playRun.setDeploymentId(deploymentId);
+                        playRun.setPlayToolProvider(playToolChain.select(binary.getTargetPlatform()));
                         playRun.setApplicationJar(binary.getJarFile());
                         playRun.setAssetsJar(binary.getAssetsJarFile());
-                        playRun.setRuntimeClasspath(configurations.getPlayRun().getFileCollection());
+                        playRun.setAssetsDirs(binary.getAssets().getAssetDirs());
+                        playRun.setRuntimeClasspath(configurations.getPlayRun().getNonChangingArtifacts());
+                        playRun.setChangingClasspath(configurations.getPlayRun().getChangingArtifacts());
                         playRun.dependsOn(binary.getBuildTask());
                     }
                 });
@@ -446,10 +409,6 @@ public class PlayApplicationPlugin implements Plugin<Project> {
 
         private File srcOutputDirectory(File buildDir, PlayApplicationBinarySpec binary, String taskName) {
             return new File(buildDir, String.format("%s/src/%s", binary.getName(), taskName));
-        }
-
-        private String getDeploymentId(ProjectIdentifier projectIdentifier, String platformName) {
-            return projectIdentifier.getPath().concat(":").concat(platformName);
         }
     }
 }

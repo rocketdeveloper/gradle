@@ -18,13 +18,8 @@ package org.gradle.model
 
 import org.gradle.api.Named
 import org.gradle.api.internal.ClosureBackedAction
-import org.gradle.model.internal.core.ModelNode
-import org.gradle.model.internal.core.ModelPath
-import org.gradle.model.internal.core.ModelReference
-import org.gradle.model.internal.core.ModelRuleExecutionException
-import org.gradle.model.internal.core.rule.describe.SimpleModelRuleDescriptor
+import org.gradle.model.internal.core.*
 import org.gradle.model.internal.fixture.ModelRegistryHelper
-import org.gradle.model.internal.inspect.DefaultModelCreatorFactory
 import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
 import org.gradle.model.internal.manage.schema.extract.InvalidManagedModelElementTypeException
 import org.gradle.model.internal.registry.UnboundModelRulesException
@@ -43,10 +38,10 @@ class ManagedNodeBackedModelMapTest extends Specification {
     def itemType = ModelType.of(NamedThingInterface)
     def modelMapType = ModelTypes.modelMap(itemType)
     def schemaStore = DefaultModelSchemaStore.instance
-    def modelCreatorFactory = new DefaultModelCreatorFactory(schemaStore)
+    def nodeInitializerRegistry = new DefaultNodeInitializerRegistry(schemaStore)
 
     def setup() {
-        registry.create(modelCreatorFactory.creator(new SimpleModelRuleDescriptor("creator"), path, schemaStore.getSchema(modelMapType)))
+        registry.create(ModelCreators.of(path, nodeInitializerRegistry.getNodeInitializer(schemaStore.getSchema(modelMapType))).descriptor("creator").build())
     }
 
     void mutate(@DelegatesTo(ModelMap) Closure<?> action) {
@@ -655,12 +650,14 @@ class ManagedNodeBackedModelMapTest extends Specification {
 
         then:
         UnboundModelRulesException e = thrown()
-        normaliseLineSeparators(e.message) == """The following model rules are unbound:
-  $ElementRules.name#connectElementToInput($Bean.name, $String.name)
-    Mutable:
-      - <unspecified> ($Bean.name) parameter 1 in scope of 'beans.element\'
-    Immutable:
-      - <unspecified> ($String.name) parameter 2"""
+        normaliseLineSeparators(e.message).contains('''
+  ManagedNodeBackedModelMapTest.ElementRules#connectElementToInput
+    subject:
+      - <no path> ManagedNodeBackedModelMapTest.Bean (parameter 1) [*]
+          scope: beans.element
+    inputs:
+      - <no path> String (parameter 2) [*]
+''')
     }
 
     static class SetOther extends RuleSource {
@@ -845,6 +842,7 @@ class ManagedNodeBackedModelMapTest extends Specification {
     abstract static class Invalid<T> implements SpecialNamedThingInterface {
 
     }
+
     def "cannot create invalid subtype"() {
         when:
         mutate {

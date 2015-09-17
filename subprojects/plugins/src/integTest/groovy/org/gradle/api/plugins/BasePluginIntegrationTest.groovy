@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 package org.gradle.api.plugins
+
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
 class BasePluginIntegrationTest extends AbstractIntegrationSpec {
 
     @Requires(TestPrecondition.MANDATORY_FILE_LOCKING)
-    @LeaksFileHandles
     def "clean failure message indicates file"() {
         given:
         executer.requireGradleHome()
@@ -31,7 +30,8 @@ class BasePluginIntegrationTest extends AbstractIntegrationSpec {
         """
 
         and:
-        def lock = new RandomAccessFile(file("build/newFile").createFile(), "rw").channel.lock()
+        def channel = new RandomAccessFile(file("build/newFile").createFile(), "rw").channel
+        def lock = channel.lock()
 
         when:
         fails "clean"
@@ -41,6 +41,7 @@ class BasePluginIntegrationTest extends AbstractIntegrationSpec {
 
         cleanup:
         lock?.release()
+        channel?.close()
     }
 
     def "can define 'build' and 'check' tasks when applying plugin"() {

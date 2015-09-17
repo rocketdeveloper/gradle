@@ -20,12 +20,8 @@ import com.google.common.util.concurrent.SimpleTimeLimiter
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.*
 import org.gradle.internal.os.OperatingSystem
-import org.gradle.process.internal.streams.SafeStreams
-import org.gradle.util.RedirectStdIn
+import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.util.TextUtil
-import org.junit.Rule
-import org.spockframework.runtime.SpockTimeoutError
-import spock.util.concurrent.PollingConditions
 
 import java.util.concurrent.TimeUnit
 
@@ -40,14 +36,7 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
 
     int buildTimeout = WAIT_FOR_WATCHING_TIMEOUT_SECONDS
     int shutdownTimeout = WAIT_FOR_SHUTDOWN_TIMEOUT_SECONDS
-    boolean expectBuildFailure = false
     boolean killToStop
-
-    @Rule
-    RedirectStdIn redirectStdIn = new RedirectStdIn()
-    PipedOutputStream stdinPipe = redirectStdIn.getStdinPipe()
-
-    String waitingMessage = "Waiting for changes to input files of tasks... (ctrl+d to exit)\n"
 
     public void turnOnDebug() {
         executer.withDebug(true)
@@ -56,7 +45,7 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
         shutdownTimeout *= 100
     }
 
-    public void cleanupWhileTestFilesExist() {
+    def cleanup() {
         stopGradle()
         if (OperatingSystem.current().isWindows()) {
             // needs delay to release file handles
@@ -94,7 +83,14 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
         }
         waitForBuild()
         if (result instanceof ExecutionFailure) {
-            throw new UnexpectedBuildFailure("build was expected to succeed but failed")
+            throw new UnexpectedBuildFailure("""build was expected to succeed but failed:
+-- STDOUT --
+${result.output}
+-- STDOUT --
+-- STDERR --
+${result.error}
+-- STDERR --
+""")
         }
         result
     }
@@ -117,9 +113,16 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
         stopGradle()
         standardOutputBuildMarker = 0
         errorOutputBuildMarker = 0
+        gradle = executer.withStdinPipe()
+            .withTasks(tasks)
+            .withForceInteractive(true)
+            .withArgument("--stacktrace")
+            .withArgument("--continuous")
+            .start()
+    }
 
-        executer.withStdIn(System.in)
-        gradle = executer.withTasks(tasks).withForceInteractive(true).withArgument("--continuous").start()
+    protected OutputStream getStdinPipe() {
+        gradle.stdinPipe
     }
 
     private void waitForBuild() {
@@ -131,7 +134,7 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
             def lastLength = lastOutput.size()
             lastOutput = buildOutputSoFar()
 
-            if (lastOutput.endsWith(TextUtil.toPlatformLineSeparators(waitingMessage))) {
+            if (lastOutput.contains(TextUtil.toPlatformLineSeparators("Waiting for changes to input files of tasks..."))) {
                 break
             } else if (lastOutput.size() > lastLength) {
                 lastActivity = System.currentTimeMillis()
@@ -152,30 +155,25 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
             if (killToStop) {
                 gradle.abort()
             } else {
-                closeStdIn()
+                gradle.cancel()
                 new SimpleTimeLimiter().callWithTimeout(
-                    { expectBuildFailure ? gradle.waitForFailure() : gradle.waitForFinish() },
+                    { gradle.waitForExit() },
                     shutdownTimeout, TimeUnit.SECONDS, false
                 )
             }
         }
     }
 
-    void closeStdIn() {
-        stdinPipe.close()
-        executer.withStdIn(SafeStreams.emptyInput())
-        redirectStdIn.resetStdinPipe()
-        stdinPipe = redirectStdIn.getStdinPipe()
-    }
-
     void noBuildTriggered(int waitSeconds = 3) {
         // TODO - change this general strategy to positively detect changes we are ignoring instead of asserting that a build doesn't happen in some time frame
         try {
-            new PollingConditions(initialDelay: 0.5).within(waitSeconds) {
+            ConcurrentTestUtil.poll(waitSeconds, 0.5) {
+                // force the poll to continue while there is no output
                 assert !buildOutputSoFar().empty
             }
-            throw new AssertionError("Expected build not to start, but started with output: " + buildOutputSoFar())
-        } catch (SpockTimeoutError e) {
+            // if we get here it means that there was build output at some point while polling
+            throw new UnexpectedBuildStartedException("Expected build not to start, but started with output: " + buildOutputSoFar())
+        } catch (AssertionError e) {
             // ok, what we want
         }
     }
@@ -200,16 +198,18 @@ abstract class AbstractContinuousIntegrationTest extends AbstractIntegrationSpec
     }
 
     private waitForNotRunning() {
-        new PollingConditions().within(WAIT_FOR_SHUTDOWN_TIMEOUT_SECONDS) {
+        ConcurrentTestUtil.poll(WAIT_FOR_SHUTDOWN_TIMEOUT_SECONDS) {
             assert !gradle.running
         }
     }
 
-    void control_D() {
-        stdinPipe.write(4)
-        if (executer.isDaemon()) {
-            // For some reason, this is necessary when running in a daemon
-            stdinPipe.write(TextUtil.toPlatformLineSeparators("\n").bytes)
+    void sendEOT() {
+        gradle.cancelWithEOT()
+    }
+
+    private static class UnexpectedBuildStartedException extends Exception {
+        UnexpectedBuildStartedException(String message) {
+            super(message)
         }
     }
 }

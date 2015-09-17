@@ -24,6 +24,7 @@ import org.gradle.api.Action;
 import org.gradle.api.Transformer;
 import org.gradle.api.internal.ClosureBackedAction;
 import org.gradle.internal.BiAction;
+import org.gradle.internal.file.RelativeFilePathResolver;
 import org.gradle.model.InvalidModelRuleDeclarationException;
 import org.gradle.model.dsl.internal.inputs.RuleInputAccessBacking;
 import org.gradle.model.dsl.internal.transform.InputReferences;
@@ -32,11 +33,13 @@ import org.gradle.model.dsl.internal.transform.RulesBlock;
 import org.gradle.model.dsl.internal.transform.SourceLocation;
 import org.gradle.model.internal.core.*;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
+import org.gradle.model.internal.manage.schema.ManagedImplModelSchema;
 import org.gradle.model.internal.manage.schema.ModelSchema;
 import org.gradle.model.internal.manage.schema.ModelSchemaStore;
 import org.gradle.model.internal.registry.ModelRegistry;
 import org.gradle.model.internal.type.ModelType;
 
+import java.net.URI;
 import java.util.List;
 
 @ThreadSafe
@@ -52,28 +55,20 @@ public class TransformedModelDslBacking {
         }
     };
 
-    private static final Transformer<SourceLocation, Closure<?>> RULE_LOCATION_EXTRACTOR = new Transformer<SourceLocation, Closure<?>>() {
-        public SourceLocation transform(Closure<?> closure) {
-            RuleMetadata ruleMetadata = getRuleMetadata(closure);
-            return new SourceLocation(ruleMetadata.scriptSourceDescription(), ruleMetadata.lineNumber(), ruleMetadata.columnNumber());
-        }
-    };
-
     private final ModelRegistry modelRegistry;
+    private final NodeInitializerRegistry nodeInitializerRegistry;
     private final Transformer<? extends InputReferences, ? super Closure<?>> inputPathsExtractor;
     private final Transformer<SourceLocation, ? super Closure<?>> ruleLocationExtractor;
     private final ModelSchemaStore schemaStore;
-    private final ModelCreatorFactory modelCreatorFactory;
 
-    public TransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore schemaStore, ModelCreatorFactory modelCreatorFactory) {
-        this(modelRegistry, schemaStore, modelCreatorFactory, INPUT_PATHS_EXTRACTOR, RULE_LOCATION_EXTRACTOR);
+    public TransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore schemaStore, NodeInitializerRegistry nodeInitializerRegistry, RelativeFilePathResolver relativeFilePathResolver) {
+        this(modelRegistry, schemaStore, nodeInitializerRegistry, INPUT_PATHS_EXTRACTOR, new RelativePathSourceLocationTransformer(relativeFilePathResolver));
     }
 
-    TransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore schemaStore, ModelCreatorFactory modelCreatorFactory, Transformer<? extends InputReferences, ? super Closure<?>> inputPathsExtractor,
-                               Transformer<SourceLocation, ? super Closure<?>> ruleLocationExtractor) {
+    TransformedModelDslBacking(ModelRegistry modelRegistry, ModelSchemaStore schemaStore, NodeInitializerRegistry nodeInitializerRegistry, Transformer<? extends InputReferences, ? super Closure<?>> inputPathsExtractor, Transformer<SourceLocation, ? super Closure<?>> ruleLocationExtractor) {
         this.modelRegistry = modelRegistry;
         this.schemaStore = schemaStore;
-        this.modelCreatorFactory = modelCreatorFactory;
+        this.nodeInitializerRegistry = nodeInitializerRegistry;
         this.inputPathsExtractor = inputPathsExtractor;
         this.ruleLocationExtractor = ruleLocationExtractor;
     }
@@ -90,11 +85,11 @@ public class TransformedModelDslBacking {
         ModelPath modelPath = ModelPath.path(modelPathString);
         ModelSchema<T> schema = schemaStore.getSchema(ModelType.of(type));
         ModelRuleDescriptor descriptor = toDescriptor(sourceLocation, modelPath);
-        if (!schema.getKind().isManaged()) {
+        if (!(schema instanceof ManagedImplModelSchema)) {
             throw new InvalidModelRuleDeclarationException(descriptor, "Cannot create an element of type " + type.getName() + " as it is not a managed type");
         }
-        ModelCreator creator = modelCreatorFactory.creator(descriptor, modelPath, schema);
-        modelRegistry.create(creator);
+        NodeInitializer nodeInitializer = nodeInitializerRegistry.getNodeInitializer((ManagedImplModelSchema<?>) schema);
+        modelRegistry.create(ModelCreators.of(modelPath, nodeInitializer).descriptor(descriptor).build());
         registerAction(modelPath, type, descriptor, ModelActionRole.Initialize, closure);
     }
 
@@ -157,6 +152,32 @@ public class TransformedModelDslBacking {
                     new ClosureBackedAction<Object>(closure).execute(object);
                 }
             });
+        }
+    }
+
+    private static class RelativePathSourceLocationTransformer implements Transformer<SourceLocation, Closure<?>> {
+        private final RelativeFilePathResolver relativeFilePathResolver;
+
+        public RelativePathSourceLocationTransformer(RelativeFilePathResolver relativeFilePathResolver) {
+            this.relativeFilePathResolver = relativeFilePathResolver;
+        }
+
+        // TODO given that all the closures are from the same file, we should do the relativising once.
+        //      that would entail adding location information to the model {} outer closure.
+        @Override
+        public SourceLocation transform(Closure<?> closure) {
+            RuleMetadata ruleMetadata = getRuleMetadata(closure);
+            URI uri = URI.create(ruleMetadata.absoluteScriptSourceLocation());
+            String scheme = uri.getScheme();
+            String description;
+
+            if ("file".equalsIgnoreCase(scheme)) {
+                description = relativeFilePathResolver.resolveAsRelativePath(ruleMetadata.absoluteScriptSourceLocation());
+            } else {
+                description = uri.toString();
+            }
+
+            return new SourceLocation(uri.toString(), description, ruleMetadata.lineNumber(), ruleMetadata.columnNumber());
         }
     }
 }

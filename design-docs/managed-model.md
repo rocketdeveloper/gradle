@@ -19,18 +19,195 @@ The term “model caching” refers to the ability to safely reuse a previously 
 
 Moreover, we consider owning the implementation of model elements an enabler for the general dependency based configuration model.
 
-## Stories
+### Terminology
 
-### Support properties of type `File`
+- *Scalar type*: a type that represents a single immutable value. Supported types:
+    - all primitive types
+    - all subtypes of Number in java.lang and java.math
+    - Boolean
+    - Character
+    - String
+    - File
+    - All subtypes of Enum
+- *Managed property*: a property of a model element, whose implementation and state is managed by Gradle. Generally only available for `@Managed` types, but there
+may also be internal mechanisms to define such properties on other types.
+- *Scalar property*: a property of a model element whose type is a scalar type.
+- *Reference property*: a property of a model element whose value references another model element.
+
+## Feature: Support more types for managed properties
+
+### Support managed properties with primitive type
+
+- Add support for all primitive types.
+- Add support for missing boxed types (Byte, Short, Float).
+- Update user guide and Javadocs
+
+##### Test cases
+
+- Can define RW properties of any scalar type
+- Cannot have read only properties of scalar types.
+- Fail type validation when getter uses primitive type and setter uses boxed type (and vice versa).
+- Cannot mutate properties of scalar types when view is immutable (eg used as input for rule, used as subject for validation rule).
+- Model report renders primitive values
+
+##### Implementation
+
+- Update `PrimitiveStrategy` to support an extraction result for primitive types
+- Add support for missing boxed types to `ManagedProxyClassGenerator`
+- Add support for primitive types to `ManagedProxyClassGenerator`. Handle case where state returns null by setting a default value.
+- Make sure `org.gradle.api.reporting.model.internal.ModelNodeRenderer.maybePrintValue` handles primitive types in a human readable form
+
+### Support `is` style getters for managed properties of type boolean
+
+- Should follow the JavaBeans specification: only type `boolean` should allow `is` getter style: `Boolean` shouldn't be supported.
+- Update user guide and Javadoc
+
+#### Test cases
+- Support `is` style accessor for properties with type `boolean`
+- Support type with both `is` and `get` accessors for property with type `boolean`
+- Prohibit `is` style accessors for properties of any type other than `boolean`(including Boolean)
+- Delegated boolean property declared with `is` getter in unmanaged super-type is supported
+
+### Support for managed properties with collection of scalar types
+
+Add support managed properties of `List<T>` and `Set<T>` where `T` is any non primitive scalar type (as defined above).
+- Any returned collection instance will be mutable when view is mutable (eg used as subject for rule).
+- Any returned collection instance will be immutable when view is immutable (eg used as input for rule, used as subject for validation rule).
+- Properties of type `Set` will retain insertion order
+
+Support read-only collection properties defined as:
 
     @Managed
-    interface Thing {
-      File getFile();
-      void setFile(File file)
+    interface ReadOnlyProperty {
+        List<String> getItems()
     }
 
-- Similar to `String` etc., getter must be accompanied by setter
-- Similar to `String` etc. `setFile()` cannot be called when the object is read only
+- Default value is an empty collection
+- Multiple calls to a getter may not return the same instance of a collection
+
+Support read-write collection properties defined using both a getter and a setter:
+
+    @Managed
+    interface ReadWriteProperty {
+        List<String> getItems()
+        void setItems(List<String> items)
+    }
+
+- Defaults to a null value
+- Can set to a null value
+- Multiple calls to a getter may not return the same instance of a collection
+- Collection returned by getter may not be the same instance as provided to the setter
+- When a setter is called, a new managed collection is created, ensuring immutability. Documentation should mention a similarity with the defensive copy pattern.
+- The collection property will only be writable when the view is mutable
+
+#### Implementation notes
+- Update user guide and Javadocs, add sample
+- Make sure `org.gradle.api.reporting.model.internal.ModelNodeRenderer.maybePrintValue` handles collection types in a human readable form (aka, not `toString()`)
+
+#### Test cases
+
+- calling the getter of a read-only property for a created node must return an empty collection
+- calling the getter of a read-write property for a created node must return `null`
+- cannot assign a collection to a read-only property
+- can assign `null` to a read-write property
+- Model report renders collection values
+    * Format should be similar to the one of `Arrays.toString`
+- For a managed type that defines a `Set<String>` read-only property
+```
+    foo.getItems().addAll(['b', 'c'])
+    foo.getItems().add('d')
+    foo.getItems().add('a')
+    foo.getItems() == ['b','c','d','a'] as Set
+```
+- For a managed type `foo` that defines a `Set<String>` read-write property
+```
+    SortedSet<String> sortedSet = Sets.newTreeSet('c', 'b')
+    foo.setItems(sortedSet)
+    sortedSet.add('d')
+    foo.getItems().add('a')
+    foo.getItems() == ['b','c','a'] as Set
+```
+- Copy on write semantics:
+```
+    List<String> list = ['a', 'b']
+    foo.setItems(list)
+    list.add 'c'
+    foo.getItems() == ['a', 'b']
+```
+- Useful error message presented when validating schema:
+    * `T` is not a scalar type
+    * `T` is not the same for getter and setter
+    * Property type is `Collection<T>`, `ArrayList<T>`, `HashSet<T>`
+    * Suggest to use interface type `List<T>` or `Set<T>` if a concrete implementation is used in the interface declaration
+
+### Convenient configuration of scalar typed properties from Groovy
+
+- Convert input value:
+    - `CharSequence` to any scalar type (eg `GString` to `Long`, `GString` to `String`)
+    - `CharSequence` to `File` conversion relative to project directory, as per `Project.file()`.
+    - Any scalar type to `String`.
+- Update user guide, Javadocs and sample
+- Implementation must reuse `NotationConverter` infrastructure.
+
+#### Test cases
+
+- Nice error message when configuring a property that does not exist, for each supported pattern.
+- Nice error message when input value cannot be converted.
+
+### Convenient configuration of File typed properties from Java
+
+TBD: make some kind of 'project layout' or 'file resolver' service available as input to rules, which can convert String and friends to File.
+
+### Convenient configuration of collection typed properties from Groovy
+
+- TBD: convert input values? eg add String values to a List<File>?
+- Update user guide, Javadocs and samples
+
+
+#### Test cases
+
+- Nice error message when configuring a property that does not exist, for each supported pattern.
+- Nice error message when input value cannot be converted.
+
+### DSL improvements
+
+- support the 'setter method' pattern from legacy domain types. For a simple type, the 'setter method' is equivalent to calling `set` or using `=`(equals) in the DSL:
+
+<!-- -->=
+
+    model {
+        thing {
+            baseDir 'some/dir' // same as baseDir = 'some/dir'
+            retries 12 // same as retries = 12
+        }
+    }
+
+- support the 'adder method' and 'setter replaces content' patterns from legacy domain types. For collection types, the 'setter method' adds new elements to the collection,
+(possibly transformed to fit the target collection element type), whereas calling `set` or using `=`(equals) in the DSL replaces the collection contents:
+
+<!-- -->
+
+    model {
+        thing {
+            sourceDirs 'a', 'b' // same as sourceDirs.addAll([convertToFile('a'), convertToFile('b')])
+            sourceDirs = ['a'] // same as sourceDirs.clear(); sourceDirs.add(convertToFile('a'))
+        }
+    }
+
+- support `=`(equals) in the DSL for read-only properties of collection type: in that case, there should not be a call to a (non existent) setter, but it should
+be syntactic sugar for `clear` followed by `addAll`.
+
+#### Open issues
+
+- Support for nested properties, that is to say support nested closures to configure properties of sub-elements
+
+
+## Backlog
+
+### Performance issues
+
+- `ModelElementState` only supports boxed types, using `get` and `set`. If the model is often updated, it could lead to performance issues, in which case it
+could be necessary to introduce primitive versions of `get` and `set`.
 
 ### Support managed types declaring properties of type `ModelMap<T>`
 
@@ -40,11 +217,10 @@ Moreover, we consider owning the implementation of model elements an enabler for
     }
 
 - No setter for property allowed
-- Element type must implement `Named`, and have no `setName`
 - Element type must be `@Managed`
 - Type taking creation methods must support subtypes
 - Rule taking methods (e.g. `all(Action)`) must throw when object is read only
-- All created elements must have `name` property populated, matching the node link name
+- All created elements implementing `Named` must have `name` property populated, matching the node link name
 - Can depend on model map element by specific type in rules
 - Element type cannot be any kind of type var
 - Can be top level element

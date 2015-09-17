@@ -15,10 +15,10 @@
  */
 
 package org.gradle.model
-
 import org.gradle.api.Named
+import org.gradle.model.internal.core.DefaultNodeInitializerRegistry
+import org.gradle.model.internal.core.ModelCreators
 import org.gradle.model.internal.fixture.ModelRegistryHelper
-import org.gradle.model.internal.inspect.DefaultModelCreatorFactory
 import org.gradle.model.internal.manage.schema.extract.DefaultModelSchemaStore
 import org.gradle.model.internal.manage.schema.extract.InvalidManagedModelElementTypeException
 import spock.lang.Specification
@@ -27,18 +27,17 @@ class ManagedNamedTest extends Specification {
 
     def r = new ModelRegistryHelper()
     def schemaStore = DefaultModelSchemaStore.getInstance()
-    def creatorFactory = new DefaultModelCreatorFactory(schemaStore)
-
+    def nodeInitializerRegistry = new DefaultNodeInitializerRegistry(schemaStore)
 
     def "named struct has name name property populated"() {
         when:
-        r.create(creatorFactory.creator(r.desc("foo"), r.path("foo"), schemaStore.getSchema(NamedThingInterface)))
+        r.create(ModelCreators.of(r.path("foo"), nodeInitializerRegistry.getNodeInitializer(schemaStore.getSchema(NamedThingInterface))).descriptor(r.desc("foo")).build())
 
         then:
         r.realize("foo", NamedThingInterface).name == "foo"
 
         when:
-        r.create(creatorFactory.creator(r.desc("bar"), r.path("bar"), schemaStore.getSchema(NamedThingInterface)))
+        r.create(ModelCreators.of(r.path("bar"), nodeInitializerRegistry.getNodeInitializer(schemaStore.getSchema(NamedThingInterface))).descriptor(r.desc("bar")).build())
 
         then:
         r.realize("bar", NamedThingInterface).name == "bar"
@@ -47,12 +46,13 @@ class ManagedNamedTest extends Specification {
     @Managed
     static abstract class NonNamedThing {
         abstract String getName()
+
         abstract void setName(String name)
     }
 
     def "named struct does not have name populated if does not implement named"() {
         when:
-        r.create(creatorFactory.creator(r.desc("foo"), r.path("foo"), schemaStore.getSchema(NonNamedThing)))
+        r.create(ModelCreators.of(r.path("foo"), nodeInitializerRegistry.getNodeInitializer(schemaStore.getSchema(NonNamedThing))).descriptor(r.desc("foo")).build())
 
         then:
         r.realize("foo", NonNamedThing).name == null
@@ -74,6 +74,7 @@ class ManagedNamedTest extends Specification {
     @Managed
     static abstract class NamedThingWithSetter implements Named {
         abstract String getName()
+
         abstract void setName(String name)
     }
 
